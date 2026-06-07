@@ -1,0 +1,25 @@
+#the mod name as displayed in-game
+displayName: "Mindustry OptiFine"
+
+#the internal name of your mod
+name: "mindustry-optifine"
+
+#your name
+author: "128_OTEML"
+
+#the fully qualified main class of the mod
+main: "MindustryOptiFine.ShadowShader"
+
+#the mod description as seen in the mod dialog
+description: "A modern shaders mod for Mindustry."
+
+#the mod version
+version: 1.0
+
+#the minimum game build required to run this mod
+minGameVersion: 157.4
+
+#this is a java mod
+java: true
+
+hidden: true
