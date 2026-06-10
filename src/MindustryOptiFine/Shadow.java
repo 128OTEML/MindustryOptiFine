@@ -17,6 +17,7 @@ import mindustry.graphics.*;
 import mindustry.world.*;
 import mindustry.world.blocks.defense.turrets.*;
 import mindustry.world.blocks.environment.*;
+import mindustry.world.draw.*;
 import MindustryOptiFine.utils.*;
 
 import java.lang.reflect.*;
@@ -36,6 +37,8 @@ public class Shadow{
     public static IndexGetterDrawc indexGetter;
 
     public static TextureRegion[][] normRegions;
+    /** Turret base depth textures, indexed by block ID. Null for non-turret blocks or if base not found. */
+    public static TextureRegion[] turretBaseNorms;
 
     public static void init(){
         SSShaders.load();
@@ -51,8 +54,8 @@ public class Shadow{
 
             for(int v = -1; v < variant; v++){
 
-                Fi file = Vars.dataDirectory.child("mods").child("ShadowShader").child(block.name + (v == -1 ? "" : v + 1) + ".png");
-                Fi genFile = Vars.dataDirectory.child("mods").child("ShadowShader").child(block.name + (v == -1 ? "" : v + 1) + "-auto.png");
+                Fi file = dataDirectory.child("mods").child("ShadowShader").child(block.name + (v == -1 ? "" : v + 1) + ".png");
+                Fi genFile = dataDirectory.child("mods").child("ShadowShader").child(block.name + (v == -1 ? "" : v + 1) + "-auto.png");
 
                 Pixmap norm;
 
@@ -105,8 +108,77 @@ public class Shadow{
 
                 var texture = new Texture(norm);
                 var normRegion = new TextureRegion(texture, w, h);
-                Core.atlas.addRegion(block.name + "-normmap", normRegion);
+                atlas.addRegion(block.name + "-normmap", normRegion);
                 normRegions[i][v + 1] = normRegion;
+            }
+
+            // --- 炮台底座深度贴图独立生成 ---
+            if(block instanceof Turret turret && turret.drawer instanceof DrawTurret dt){
+                if(turretBaseNorms == null){
+                    turretBaseNorms = new TextureRegion[content.blocks().size];
+                }
+
+                TextureRegion baseRegion = dt.base;
+                if(baseRegion != null && baseRegion.found()){
+                    int bw = block.size * tilesize * 8, bh = block.size * tilesize * 8;
+                    Fi baseFile = dataDirectory.child("mods").child("ShadowShader").child(block.name + "-base.png");
+                    Fi baseGenFile = dataDirectory.child("mods").child("ShadowShader").child(block.name + "-base-auto.png");
+
+                    Pixmap baseNorm;
+                    try{
+                        baseNorm = PixmapIO.readPNG(baseFile);
+                    }catch(Exception e){
+                        try{
+                            baseNorm = PixmapIO.readPNG(baseGenFile);
+                        }catch(Exception ignore){
+                            Log.errTag("ShadowShader", "Error reading base depth from file: " + block.localizedName + " & auto gen not found. Using generator......");
+                            FrameBuffer buffer = new FrameBuffer(bw, bh);
+                            buffer.begin();
+                            camera.width = bw;
+                            camera.height = bh;
+                            camera.position.x = 0;
+                            camera.position.y = 0;
+                            camera.update();
+                            Draw.proj(camera);
+                            Draw.reset();
+
+                            // 透明背景，保留 alpha
+                            Draw.color(Color.clear);
+                            Fill.rect(0, 0, bw, bh);
+                            Draw.reset();
+
+                            Draw.rect(baseRegion, 0, 0, bw, bh);
+                            Draw.flush();
+                            byte[] lines = ScreenUtils.getFrameBufferPixels(0, 0, bw, bh, true);
+                            buffer.end();
+                            buffer.dispose();
+
+                            Pixmap shot = new Pixmap(bw, bh);
+                            baseNorm = new Pixmap(bw, bh);
+                            Buffers.copy(lines, 0, shot.pixels, lines.length);
+                            Buffers.copy(lines, 0, baseNorm.pixels, lines.length);
+                            Generators.check(shot, baseNorm);
+
+                            // 清除透明区域，确保底座深度贴图严格限定在底座轮廓内
+                            for(int px = 0; px < baseNorm.width; px++){
+                                for(int py = 0; py < baseNorm.height; py++){
+                                    int shotPixel = shot.get(px, py);
+                                    int shotAlpha = (shotPixel >>> 24) & 0xFF;
+                                    if(shotAlpha < 10){
+                                        baseNorm.set(px, py, Color.clear);
+                                    }
+                                }
+                            }
+
+                            PixmapIO.writePng(baseGenFile, baseNorm);
+                        }
+                    }
+
+                    var texture = new Texture(baseNorm);
+                    var normRegion = new TextureRegion(texture, bw, bh);
+                    atlas.addRegion(block.name + "-normmap-base", normRegion);
+                    turretBaseNorms[i] = normRegion;
+                }
             }
         }
 
@@ -131,7 +203,7 @@ public class Shadow{
         tmpc[0] = fCircleX == null ? -1f : RefUtils.getValue(fCircleX, circle);
         tmpc[1] = fCircleY == null ? -1f : RefUtils.getValue(fCircleY, circle);
         var tile = world.tileWorld(tmpc[0], tmpc[1]);
-        tmpc[2] = tile == null ? 0f : tile.build != null && Mathf.dst(tile.build.x, tile.build.y, tmpc[0], tmpc[1]) < 0.1f ? tile.block().size * tilesize : 0f;   //whether the light comes from a building
+        tmpc[2] = tile == null ? 0f : tile.build != null && Mathf.dst(tile.build.x, tile.build.y, tmpc[0], tmpc[1]) < 0.1f ? tile.block().size * tilesize : 0f;
         tmpc[3] = fCircleR == null ? -1f : RefUtils.getValue(fCircleR, circle);
         tmpc[3] *= fCircleC == null ? 1f : Tmp.c1.abgr8888(RefUtils.getValue(fCircleC, circle)).a;
     }
@@ -144,17 +216,56 @@ public class Shadow{
         if(!shadow && !debug) return;
 
         for(Tile tile : tiles){
-            //draw white/shadow color depending on blend
             float bs = tile.block().size * tilesize;
             if(state.rules.fog && tile.build != null && !tile.build.wasVisible) continue;
             Draw.z(getLayer());
             Draw.color();
             Draw.mixcol();
-            if(!depthTex){
-                Draw.mixcol(Color.white, 1f);
-                Draw.rect(tile.block().fullIcon, tile.build == null ? tile.worldx() : tile.build.x, tile.build == null ? tile.worldy() : tile.build.y, bs, bs, (tile.build == null || tile.build instanceof BaseTurret.BaseTurretBuild) ? 0f : tile.build.drawrot());
+
+            float x = tile.build == null ? tile.worldx() : tile.build.x;
+            float y = tile.build == null ? tile.worldy() : tile.build.y;
+
+            if(tile.build instanceof BaseTurret.BaseTurretBuild){
+                // ==================== 炮台：仅绘制底座层 ====================
+                // 炮管阴影/深度贴图完全由原版 DrawTurret 处理，Shadow 系统不再绘制任何炮管内容
+
+                TextureRegion baseRegion = null;
+                if(tile.block() instanceof Turret turret && turret.drawer instanceof DrawTurret dt){
+                    baseRegion = dt.base;
+                }
+
+                float baseRot = 0f;
+                if(!depthTex){
+                    Draw.mixcol(Color.white, 1f);
+                    // 白模模式下使用纯底座贴图，避免绘制完整炮塔轮廓
+                    if(baseRegion != null && baseRegion.found()){
+                        Draw.rect(baseRegion, x, y, bs, bs, baseRot);
+                    }else{
+                        Draw.rect(tile.block().fullIcon, x, y, bs, bs, baseRot);
+                    }
+                }else{
+                    // 法线模式下使用底座深度贴图（透明区域已清除，不越界）
+                    if(turretBaseNorms != null && turretBaseNorms[tile.block().id] != null){
+                        Draw.rect(turretBaseNorms[tile.block().id], x, y, bs, bs, baseRot);
+                    }else{
+                        Draw.rect(normRegions[tile.block().id][0], x, y, bs, bs, baseRot);
+                    }
+                }
+                // 注意：此处已删除所有炮管层绘制代码
+
             }else{
-                Draw.rect(normRegions[tile.block().id][0], tile.build == null ? tile.worldx() : tile.build.x, tile.build == null ? tile.worldy() : tile.build.y, bs, bs, (tile.build == null || tile.build instanceof BaseTurret.BaseTurretBuild) ? 0f : tile.build.drawrot());
+                // ==================== 普通建筑（原逻辑） ====================
+                float rot = 0f;
+                if(tile.build != null){
+                    rot = tile.build.drawrot();
+                }
+
+                if(!depthTex){
+                    Draw.mixcol(Color.white, 1f);
+                    Draw.rect(tile.block().fullIcon, x, y, bs, bs, rot);
+                }else{
+                    Draw.rect(normRegions[tile.block().id][0], x, y, bs, bs, rot);
+                }
             }
         }
     }
@@ -163,14 +274,12 @@ public class Shadow{
         if(!shadow && !debug) return;
         Draw.z(getLayer());
         Draw.color();
-        var r = Core.camera.bounds(Tmp.r1);
+        var r = camera.bounds(Tmp.r1);
         for(int x = Mathf.floor(r.x/tilesize); x < Mathf.ceil((r.x + r.width)/tilesize) ; x++){
             for(int y = Mathf.floor(r.y/tilesize); y < Mathf.ceil((r.y + r.height)/tilesize) ; y++){
                 var tile = world.tile(x, y);
                 if(tile == null || tile.build != null) continue;
                 Block todraw = tile.block() != Blocks.air ? tile.block() : null;
-                //TODO texture variants
-                //Block todraw = tile.block() != Blocks.air ? tile.block() : tile.overlay() != Blocks.air ? tile.overlay() : tile.floor();
                 if(todraw == null) continue;
                 float bs = tilesize;
                 Draw.mixcol();
@@ -191,7 +300,6 @@ public class Shadow{
 
     public static void applyShader(){
         if(!shadow || debug || SSShaders.shadow == null) return;
-        //the layer of block shadow;
         Draw.drawRange(getLayer(), 0.1f, () -> renderer.effectBuffer.begin(Color.clear), () -> {
             renderer.effectBuffer.end();
             renderer.effectBuffer.blit(SSShaders.shadow);
@@ -229,12 +337,11 @@ public class Shadow{
             return;
         }
         Tmp.v3.set(Mathf.floor((values[0] + 100f) * 5)
-                + Mathf.floor(values[2]) * 50000f,
+                        + Mathf.floor(values[2]) * 50000f,
                 Mathf.floor((values[1] + 100f) * 5)
-                + Mathf.floor(values[3]) * 50000f);
+                        + Mathf.floor(values[3]) * 50000f);
     }
 
-    //a hook to get circles before they are recycled by lightRenderer
     public static class IndexGetterDrawc implements Drawc{
         public transient boolean added = false;
 
