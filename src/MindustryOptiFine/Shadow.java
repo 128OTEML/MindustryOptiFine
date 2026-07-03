@@ -24,10 +24,16 @@ import java.lang.reflect.*;
 
 import static arc.Core.*;
 import static mindustry.Vars.*;
-import static MindustryOptiFine.ShadowShader.config;
 
 public class Shadow{
-    static boolean depthTex, shadow, debug;
+    public static boolean depthTex = true;
+    public static boolean shadow = false;
+    public static boolean debug = false;
+    public static int precision = 8;
+    public static boolean zoomPrec = false;
+    public static int lightLowPass = 8;
+    public static int maxLights = 100;
+
     public static Field fCircles = RefUtils.getField(LightRenderer.class, "circles"), fSize = RefUtils.getField(LightRenderer.class, "circleIndex"), fCircleX, fCircleY, fCircleR, fCircleC;
     public static int size = 0;
     public static Seq<float[]> floatlights = new Seq<>();
@@ -184,11 +190,7 @@ public class Shadow{
 
     }
 
-    public static void updSetting(){
-        depthTex = config.getb("depthTex",true);
-        shadow = config.getb("shadow",false);
-        debug = config.getb("debug",false);
-    }
+    
 
     public static void getIndex(){
         size = RefUtils.getValue(fSize, renderer.lights);
@@ -322,8 +324,8 @@ public class Shadow{
         floatlights.sort(fs -> -fs[3]);
 
         if(floatlights.isEmpty()) return;
-        float minR = config.geti("lightLowPass", 8);
-        float maxLight = config.geti("maxLights", 100);
+        float minR = lightLowPass;
+        float maxLight = maxLights;
         for(int i = 0; i < Math.min(Math.min(floatlights.size, 400), maxLight); i++){
             if(floatlights.get(i)[3] < minR) break;
             pack(floatlights.get(i));
