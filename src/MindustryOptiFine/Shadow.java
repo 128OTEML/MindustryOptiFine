@@ -26,8 +26,8 @@ import static arc.Core.*;
 import static mindustry.Vars.*;
 
 public class Shadow{
-    public static boolean depthTex = true;
-    public static boolean shadow = false;
+    public static boolean depthTex = false;
+    public static boolean shadow = true;
     public static boolean debug = false;
     public static int precision = 8;
     public static boolean zoomPrec = false;

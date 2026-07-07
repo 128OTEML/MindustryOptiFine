@@ -353,6 +353,22 @@ public class MindustryOptiFine extends Mod{
         hideVanillaLights = Core.settings.getBool("al-hide-lights", false);
         setBloom(Core.settings.getBool("al-bloom-enabled", false));
         renderEnvironment = Core.settings.getBool("al-environment-enabled", true);
+
+        Shadow.shadow = Core.settings.getBool("shadow", true);
+        Shadow.depthTex = Core.settings.getBool("depthTex", false);
+        Shadow.precision = Core.settings.getInt("precision", 8);
+        Shadow.zoomPrec = Core.settings.getBool("zoomPrec", false);
+        Shadow.lightLowPass = Core.settings.getInt("lightLowPass", 8);
+        Shadow.maxLights = Core.settings.getInt("maxLights", 100);
+        Shadow.debug = Core.settings.getBool("debug", false);
+
+        EdgeRenderer.enabled = Core.settings.getBool("edge-enabled", true);
+
+        AdvancedCamera.sensitivity = Core.settings.getInt("camera-sensitivity", 100) / 100f;
+        boolean advCam = Core.settings.getBool("advanced-camera", false);
+        if(advCam){
+            AdvancedCamera.setEnabled(true);
+        }
     }
 
     public void setBloom(boolean on){
