@@ -623,12 +623,47 @@ public class AltLightBatch extends SpriteBatch{
     LightRequest[] copy = new LightRequest[0];
     int[] contiguous = new int[2048], contiguousCopy = new int[2048];
     int[] locs = new int[contiguous.length];
+    static final int sortThreshold = 100;
+
     void sortRequestsMain(){
+        if(calls <= sortThreshold){
+            simpleSort();
+            return;
+        }
         if(multithreaded){
             sortRequestsThreaded();
         }else{
             sortRequests();
         }
+    }
+
+    void simpleSort(){
+        final int numRequests = calls;
+        if(copy.length < numRequests) copy = new LightRequest[numRequests + (numRequests >> 3)];
+        System.arraycopy(requests, 0, copy, 0, numRequests);
+        float[] tmpZ = new float[numRequests];
+        System.arraycopy(requestZ, 0, tmpZ, 0, numRequests);
+        
+        for(int i = 0; i < numRequests - 1; i++){
+            int minIdx = i;
+            for(int j = i + 1; j < numRequests; j++){
+                if(tmpZ[j] < tmpZ[minIdx]){
+                    minIdx = j;
+                }
+            }
+            if(minIdx != i){
+                LightRequest tmpReq = copy[i];
+                copy[i] = copy[minIdx];
+                copy[minIdx] = tmpReq;
+                
+                float tmp = tmpZ[i];
+                tmpZ[i] = tmpZ[minIdx];
+                tmpZ[minIdx] = tmp;
+            }
+        }
+        
+        System.arraycopy(copy, 0, requests, 0, numRequests);
+        System.arraycopy(tmpZ, 0, requestZ, 0, numRequests);
     }
 
     public void sortRequestsThreaded(){

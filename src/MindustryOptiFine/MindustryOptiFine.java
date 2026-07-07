@@ -155,12 +155,15 @@ public class MindustryOptiFine extends Mod{
         });
         Events.on(WorldLoadEvent.class, e -> {
             if(renderEnvironment){
+                staticRenderer.dispose();
                 staticRenderer.begin();
                 for(Tile tile : Vars.world.tiles){
                     staticRenderer.handleTile(tile);
                 }
                 staticRenderer.end();
             }
+            EdgeRenderer.dispose();
+            EdgeRenderer.init();
         });
 
         Events.run(EventType.Trigger.draw, () -> {
@@ -349,22 +352,22 @@ public class MindustryOptiFine extends Mod{
     }
 
     void loadSettings(){
-        bloomQuality = Core.settings.getInt("al-bloom-quality", 4);
+        bloomQuality = Mathf.clamp(Core.settings.getInt("al-bloom-quality", 4), 1, 16);
         hideVanillaLights = Core.settings.getBool("al-hide-lights", false);
         setBloom(Core.settings.getBool("al-bloom-enabled", false));
         renderEnvironment = Core.settings.getBool("al-environment-enabled", true);
 
         Shadow.shadow = Core.settings.getBool("shadow", true);
         Shadow.depthTex = Core.settings.getBool("depthTex", false);
-        Shadow.precision = Core.settings.getInt("precision", 8);
+        Shadow.precision = Mathf.clamp(Core.settings.getInt("precision", 8), 1, 32);
         Shadow.zoomPrec = Core.settings.getBool("zoomPrec", false);
-        Shadow.lightLowPass = Core.settings.getInt("lightLowPass", 8);
-        Shadow.maxLights = Core.settings.getInt("maxLights", 100);
+        Shadow.lightLowPass = Mathf.clamp(Core.settings.getInt("lightLowPass", 8), 0, 128);
+        Shadow.maxLights = Mathf.clamp(Core.settings.getInt("maxLights", 100), 0, 1000);
         Shadow.debug = Core.settings.getBool("debug", false);
 
         EdgeRenderer.enabled = Core.settings.getBool("edge-enabled", true);
 
-        AdvancedCamera.sensitivity = Core.settings.getInt("camera-sensitivity", 100) / 100f;
+        AdvancedCamera.sensitivity = Mathf.clamp(Core.settings.getInt("camera-sensitivity", 100) / 100f, 0.1f, 5f);
         boolean advCam = Core.settings.getBool("advanced-camera", false);
         if(advCam){
             AdvancedCamera.setEnabled(true);
@@ -890,7 +893,9 @@ public class MindustryOptiFine extends Mod{
 
         if(renderEnvironment){
                 Draw.draw(Layer.floor, () -> {
+                    PerformanceStats.start("staticRenderer.drawFloors");
                     staticRenderer.drawFloors();
+                    PerformanceStats.end("staticRenderer.drawFloors");
 
                     if(EdgeRenderer.hasEdge() && tileView != null){
                         for(Tile tile : tileView){
@@ -997,9 +1002,13 @@ public class MindustryOptiFine extends Mod{
         Blending.normal.apply();
 
         if(bloomActive && bloom != null){
+            PerformanceStats.start("bloom.render");
             bloom.resize(Core.graphics.getWidth(), Core.graphics.getHeight(), bloomQuality);
             bloom.render(buffer.getTexture());
+            PerformanceStats.end("bloom.render");
         }
+        
+        PerformanceStats.frameEnd();
     }
 
     void hideLights(){

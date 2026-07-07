@@ -274,16 +274,28 @@ public class Shadow{
 
     public static void drawMap(){
         if(!shadow && !debug) return;
+        
         Draw.z(getLayer());
         Draw.color();
+        
         var r = camera.bounds(Tmp.r1);
-        for(int x = Mathf.floor(r.x/tilesize); x < Mathf.ceil((r.x + r.width)/tilesize) ; x++){
-            for(int y = Mathf.floor(r.y/tilesize); y < Mathf.ceil((r.y + r.height)/tilesize) ; y++){
+        int minX = Math.max(0, Mathf.floor(r.x / tilesize));
+        int maxX = Math.min(world.width(), Mathf.ceil((r.x + r.width) / tilesize));
+        int minY = Math.max(0, Mathf.floor(r.y / tilesize));
+        int maxY = Math.min(world.height(), Mathf.ceil((r.y + r.height) / tilesize));
+        
+        if(minX >= maxX || minY >= maxY) return;
+        
+        float bs = tilesize;
+        
+        for(int x = minX; x < maxX; x++){
+            for(int y = minY; y < maxY; y++){
                 var tile = world.tile(x, y);
                 if(tile == null || tile.build != null) continue;
-                Block todraw = tile.block() != Blocks.air ? tile.block() : null;
-                if(todraw == null) continue;
-                float bs = tilesize;
+                
+                Block todraw = tile.block();
+                if(todraw == Blocks.air) continue;
+                
                 Draw.mixcol();
                 if(depthTex){
                     Mathf.rand.setSeed(tile.pos());
