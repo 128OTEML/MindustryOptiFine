@@ -11,13 +11,13 @@ repositories{
 }
 
 java{
-    targetCompatibility = 8
+    targetCompatibility = 17
     sourceCompatibility = JavaVersion.VERSION_17
 }
 
 ext{
     //the build number that this mod is made for
-    mindustryVersion = 'v158.1'
+    mindustryVersion = 'v159'
     jabelVersion = "93fde537c7"
     isWindows = System.getProperty("os.name").toLowerCase().contains("windows")
     sdkRoot = System.getenv("ANDROID_HOME") ?: System.getenv("ANDROID_SDK_ROOT")
@@ -27,7 +27,7 @@ ext{
 allprojects{
     tasks.withType(JavaCompile).tap{
         configureEach{
-            options.compilerArgs.addAll(['--release', '8'])
+            options.compilerArgs.addAll(['--release', '17'])
             options.encoding = 'UTF-8'
         }
     }

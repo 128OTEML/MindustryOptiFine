@@ -7,6 +7,7 @@ import arc.graphics.gl.*;
 import arc.math.*;
 import arc.math.geom.*;
 import arc.struct.*;
+import MindustryOptiFine.struct.IntIntMap;
 import arc.util.*;
 import MindustryOptiFine.*;
 import MindustryOptiFine.graphics.ALShaders.*;
