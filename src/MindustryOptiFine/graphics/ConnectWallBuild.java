@@ -84,6 +84,10 @@ public class ConnectWallBuild extends Building {
 
     @Override
     public void draw() {
+        if (!ConnectWallHandler.enabled) {
+            super.draw();
+            return;
+        }
         String blockName = block.name;
         TextureRegion[] regions = ConnectWallHandler.getTiledRegions(blockName);
         if (regions != null && drawIndex < regions.length) {
@@ -103,6 +107,8 @@ public class ConnectWallBuild extends Building {
     public void updateProximity() {
         super.updateProximity();
 
+        if (!ConnectWallHandler.enabled) return;
+
         updateProximityWall();
         for (ConnectWallBuild other : connectedWalls) {
             other.updateProximityWall();
@@ -111,8 +117,10 @@ public class ConnectWallBuild extends Building {
 
     @Override
     public void onRemoved() {
-        for (ConnectWallBuild other : connectedWalls) {
-            other.updateProximityWall();
+        if (ConnectWallHandler.enabled) {
+            for (ConnectWallBuild other : connectedWalls) {
+                other.updateProximityWall();
+            }
         }
         super.onRemoved();
     }

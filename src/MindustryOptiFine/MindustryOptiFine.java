@@ -14,6 +14,7 @@ import arc.util.*;
 import MindustryOptiFine.graphics.*;
 import MindustryOptiFine.graphics.StaticBlockRenderer.*;
 import MindustryOptiFine.parts.*;
+import MindustryOptiFine.shadow.*;
 import MindustryOptiFine.utils.*;
 import mindustry.*;
 import mindustry.content.*;
@@ -26,7 +27,6 @@ import mindustry.game.EventType.*;
 import mindustry.gen.*;
 import mindustry.graphics.*;
 import mindustry.ctype.*;
-import mindustry.core.*;
 import mindustry.mod.*;
 import mindustry.type.*;
 import mindustry.type.weapons.*;
@@ -185,6 +185,8 @@ public class MindustryOptiFine extends Mod{
             if (tiles != null) Shadow.draw(tiles);
             Shadow.drawMap();
         });
+
+        ShadowMain.initEvents();
         
         Events.on(TileChangeEvent.class, e -> {
             if(e.tile != null && e.tile.build != null && ConnectWallHandler.hasConnectTexture(e.tile.build)){
@@ -401,7 +403,21 @@ public class MindustryOptiFine extends Mod{
 
             st.row();
 
-            st.checkPref("shadow", true, b -> Shadow.shadow = b);
+            st.checkPref("shadow", false, b -> {
+                Shadow.shadow = b;
+                if(b){
+                    ShadowRenderer.enabled = false;
+                    Core.settings.put("shadows_enabled", false);
+                }
+            });
+            st.checkPref("shadows_enabled", true, b -> {
+                ShadowRenderer.enabled = b;
+                ShadowRenderer.updateUnitShadows();
+                if(b){
+                    Shadow.shadow = false;
+                    Core.settings.put("shadow", false);
+                }
+            });
             st.checkPref("depthTex", false, b -> Shadow.depthTex = b);
             st.sliderPref("precision", 8, 1, 24, 1, s -> {
                 Shadow.precision = s;
@@ -417,6 +433,52 @@ public class MindustryOptiFine extends Mod{
                 return s + "";
             });
             st.checkPref("debug", false, b -> Shadow.debug = b);
+
+            st.row();
+
+            st.checkPref("day_night_cycle", true, val -> ShadowRenderer.dayNightCycle = val);
+            st.checkPref("unit_shadows", true, val -> {
+                ShadowRenderer.unitShadowsEnabled = val;
+                ShadowRenderer.updateUnitShadows();
+            });
+
+            st.sliderPref("graphics_quality", 2, 0, 2, 1, s -> {
+                ShadowRenderer.graphicsQuality = s;
+                return s == 0 ? "Low" : s == 1 ? "Medium" : "High";
+            });
+            st.sliderPref("shadow_length", 10, 0, 30, 1, s -> {
+                ShadowRenderer.SHADOW_LENGTH = s;
+                return s + " tiles";
+            });
+            st.sliderPref("prop_shadow_scale", 100, 0, 200, 10, s -> {
+                ShadowRenderer.propShadowScale = s / 100f;
+                boolean oldVal = ShadowRenderer.oldShadowsEnabled;
+                ShadowRenderer.oldShadowsEnabled = (s == 0);
+                if (oldVal != ShadowRenderer.oldShadowsEnabled) {
+                    ShadowRenderer.ChunkCache.invalidateAll();
+                }
+                return s == 0 ? "Mindustry (Old)" : s + "%";
+            });
+            st.sliderPref("shadow_opacity_percent", 45, 0, 100, 1, s -> {
+                ShadowRenderer.SHADOW_ALPHA = s / 100f;
+                return s + "%";
+            });
+            st.sliderPref("blur_radius", 35, 10, 80, 5, s -> {
+                ShadowRenderer.blurRadius = s / 10f;
+                return (s / 10f) + " px";
+            });
+            st.sliderPref("shadow_tint_percent", 60, 0, 100, 5, s -> {
+                ShadowRenderer.shadowTint = s / 100f;
+                return s + "%";
+            });
+            st.sliderPref("contact_shadow_percent", 45, 0, 100, 5, s -> {
+                ShadowRenderer.contactShadow = s / 100f;
+                return s + "%";
+            });
+            st.sliderPref("dark_fade_percent", 80, 0, 100, 5, s -> {
+                ShadowRenderer.darkFadeStrength = s / 100f;
+                return s + "%";
+            });
 
             st.row();
 
@@ -472,7 +534,16 @@ public class MindustryOptiFine extends Mod{
         setBloom(Core.settings.getBool("al-bloom-enabled", false));
         renderEnvironment = Core.settings.getBool("al-environment-enabled", true);
 
-        Shadow.shadow = Core.settings.getBool("shadow", true);
+        boolean dynamicShadowEnabled = Core.settings.getBool("shadows_enabled", true);
+        Shadow.shadow = Core.settings.getBool("shadow", !dynamicShadowEnabled);
+        
+        if(dynamicShadowEnabled){
+            Shadow.shadow = false;
+            Core.settings.put("shadow", false);
+        }
+
+        ShadowMain.loadSettings();
+
         Shadow.depthTex = Core.settings.getBool("depthTex", false);
         Shadow.precision = Mathf.clamp(Core.settings.getInt("precision", 8), 1, 32);
         Shadow.zoomPrec = Core.settings.getBool("zoomPrec", false);
@@ -481,6 +552,7 @@ public class MindustryOptiFine extends Mod{
         Shadow.debug = Core.settings.getBool("debug", false);
 
         EdgeRenderer.enabled = Core.settings.getBool("edge-enabled", true);
+        ConnectWallHandler.enabled = Core.settings.getBool("connect-wall-enabled", true);
 
         AdvancedCamera.sensitivity = Mathf.clamp(Core.settings.getInt("camera-sensitivity", 100) / 100f, 0.1f, 5f);
         boolean advCam = Core.settings.getBool("advanced-camera", false);

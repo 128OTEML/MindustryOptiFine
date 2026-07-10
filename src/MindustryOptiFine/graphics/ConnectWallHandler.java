@@ -12,6 +12,7 @@ import mindustry.gen.Groups;
 import mindustry.world.Tile;
 import mindustry.world.blocks.TileBitmask;
 import mindustry.world.blocks.defense.Wall;
+import mindustry.Vars;
 
 public class ConnectWallHandler {
     public static final ObjectMap<String, TextureRegion[]> tiledRegions = new ObjectMap<>();
@@ -19,6 +20,9 @@ public class ConnectWallHandler {
     public static final IntMap<Integer> drawIndices = new IntMap<>();
     public static final IntMap<Integer> innerDrawIndices = new IntMap<>();
     public static boolean enabled = true;
+    
+    public static int depthFrameCount = 0;
+    public static final int DEPTH_UPDATE_INTERVAL = 20;
 
     public static void load() {
         tiledRegions.clear();
@@ -111,6 +115,32 @@ public class ConnectWallHandler {
         if (innerRegions != null && drawIndex == 13) {
             if (innerDrawIndex >= innerRegions.length) innerDrawIndex = 0;
             Draw.rect(innerRegions[innerDrawIndex], build.x, build.y);
+        }
+    }
+
+    public static void drawConnectWallDepth(Building build) {
+        if (!enabled) return;
+        
+        depthFrameCount++;
+        if (depthFrameCount % DEPTH_UPDATE_INTERVAL != 0) return;
+        
+        String blockName = build.block.name;
+        TextureRegion[] regions = tiledRegions.get(blockName);
+        if (regions == null) return;
+        
+        int pos = build.pos();
+        int drawIndex = drawIndices.get(pos, 0);
+        
+        if (drawIndex >= regions.length) drawIndex = 0;
+        
+        float bs = build.block.size * Vars.tilesize;
+        Draw.rect(regions[drawIndex], build.x, build.y, bs, bs);
+        
+        TextureRegion[] innerRegions = innerTiledRegions.get(blockName);
+        if (innerRegions != null && drawIndex == 13) {
+            int innerDrawIndex = innerDrawIndices.get(pos, 0);
+            if (innerDrawIndex >= innerRegions.length) innerDrawIndex = 0;
+            Draw.rect(innerRegions[innerDrawIndex], build.x, build.y, bs, bs);
         }
     }
 

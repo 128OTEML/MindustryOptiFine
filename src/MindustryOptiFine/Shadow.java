@@ -19,9 +19,12 @@ import mindustry.world.blocks.defense.turrets.*;
 import mindustry.world.blocks.environment.*;
 import mindustry.world.draw.*;
 import MindustryOptiFine.utils.*;
+import MindustryOptiFine.graphics.ConnectWallHandler.*;
 
 import java.lang.reflect.*;
 
+import static MindustryOptiFine.MindustryOptiFine.*;
+import static MindustryOptiFine.graphics.ConnectWallHandler.*;
 import static arc.Core.*;
 import static mindustry.Vars.*;
 
@@ -59,6 +62,7 @@ public class Shadow{
         //load or generate normMaps
         for(int i = 0; i < normRegions.length; i++){
             var block = content.block(i);
+            if((block instanceof mindustry.world.blocks.environment.Floor && ((mindustry.world.blocks.environment.Floor)block).isLiquid)) continue;
             int variant = block.variantRegions != null ? block.variantRegions.length : 0;
             normRegions[i] = new TextureRegion[variant + 1];
 
@@ -70,7 +74,7 @@ public class Shadow{
                 Pixmap norm;
 
                 int w, h;
-                if(PropShadowHelper.isProp(block)){
+                if(PropShadowHelper.isProp(block) || block instanceof mindustry.world.blocks.environment.StaticWall){
                     TextureRegion region = v == -1 ? (block.region == null ? block.fullIcon : block.region) : block.variantRegions[v];
                     if(region != null && region.found()){
                         float worldW = region.width * Draw.scl;
@@ -120,8 +124,8 @@ public class Shadow{
                         Buffers.copy(lines, 0, norm.pixels, lines.length);
                         //normal mapping - 使用高度缩放因子
                         float heightScale;
-                        if(PropShadowHelper.isProp(block)){
-                            // 道具使用基于类型和区域尺寸的高度缩放
+                        if(PropShadowHelper.isProp(block) || block instanceof mindustry.world.blocks.environment.StaticWall){
+                            // 道具和墙体使用基于类型和区域尺寸的高度缩放
                             heightScale = PropShadowHelper.getPropHeightScale(block, v == -1 ? (block.region == null ? block.fullIcon : block.region) : block.variantRegions[v]);
                         }else{
                             // 普通方块使用block.size/4.0作为高度缩放因子
@@ -229,9 +233,10 @@ public class Shadow{
         frameCount++;
         if(frameCount % PROP_UPDATE_INTERVAL != 0) return;
         
-        propDepthBuffer.resize((int) camera.width, (int) camera.height);
+        propDepthBuffer.resize(Core.graphics.getWidth(), Core.graphics.getHeight());
         propDepthBuffer.begin(Color.clear);
         
+        Draw.proj(camera);
         Draw.color();
         Draw.mixcol();
         
@@ -360,7 +365,18 @@ public class Shadow{
                     Draw.mixcol(Color.white, 1f);
                     Draw.rect(tile.block().fullIcon, x, y, bs, bs, rot);
                 }else{
+                    if(tile.build != null && tile.build.block instanceof mindustry.world.blocks.defense.Wall && enabled){
+                        continue;
+                    }
                     Draw.rect(normRegions[tile.block().id][0], x, y, bs, bs, rot);
+                }
+            }
+        }
+        
+        if(depthTex){
+            for(Tile tile : tiles){
+                if(tile.build != null && tile.build.block instanceof mindustry.world.blocks.defense.Wall){
+                    drawConnectWallDepth(tile.build);
                 }
             }
         }
@@ -388,7 +404,7 @@ public class Shadow{
                 if(tile == null || tile.build != null) continue;
                 
                 Block todraw = tile.block();
-                if(todraw == Blocks.air) continue;
+                if(todraw == Blocks.air || (todraw instanceof mindustry.world.blocks.environment.Floor && ((mindustry.world.blocks.environment.Floor)todraw).isLiquid)) continue;
                 
                 Draw.mixcol();
                 
@@ -399,11 +415,30 @@ public class Shadow{
                     if(isProp){
                         continue;
                     }else if(todraw.variantRegions == null){
-                        Draw.rect(normRegions[todraw.id][0], tile.worldx(), tile.worldy(), bs, bs, 0f);
+                        if(todraw instanceof mindustry.world.blocks.environment.StaticWall){
+                            TextureRegion region = todraw.region;
+                            if(region != null && region.found()){
+                                Draw.rect(normRegions[todraw.id][0], tile.worldx(), tile.worldy(), region.width * Draw.scl, region.height * Draw.scl, 0f);
+                            }else{
+                                Draw.rect(normRegions[todraw.id][0], tile.worldx(), tile.worldy(), bs, bs, 0f);
+                            }
+                        }else{
+                            Draw.rect(normRegions[todraw.id][0], tile.worldx(), tile.worldy(), bs, bs, 0f);
+                        }
                     }else{
-                        Draw.rect(normRegions[todraw.id][1 + Mathf.randomSeed(tile.pos(), 0, Math.max(0, todraw.variantRegions.length - 1))], tile.worldx(), tile.worldy(), bs, bs, 0f);
+                        int idx = 1 + Mathf.randomSeed(tile.pos(), 0, Math.max(0, todraw.variantRegions.length - 1));
+                        if(todraw instanceof mindustry.world.blocks.environment.StaticWall){
+                            TextureRegion region = todraw.variantRegions[idx - 1];
+                            if(region != null && region.found()){
+                                Draw.rect(normRegions[todraw.id][idx], tile.worldx(), tile.worldy(), region.width * Draw.scl, region.height * Draw.scl, 0f);
+                            }else{
+                                Draw.rect(normRegions[todraw.id][idx], tile.worldx(), tile.worldy(), bs, bs, 0f);
+                            }
+                        }else{
+                            Draw.rect(normRegions[todraw.id][idx], tile.worldx(), tile.worldy(), bs, bs, 0f);
+                        }
                     }
-                }else if(todraw.cacheLayer == CacheLayer.walls || isProp){
+                }else if(todraw.cacheLayer == CacheLayer.walls || isProp || todraw instanceof mindustry.world.blocks.environment.StaticWall){
                     Draw.mixcol(Color.white, 1f);
                     
                     if(isProp){
@@ -422,14 +457,29 @@ public class Shadow{
                             Draw.rect(todraw.fullIcon, tile.worldx(), tile.worldy(), bs, bs, 0f);
                         }
                     }else{
-                        Draw.rect(todraw.fullIcon, tile.worldx(), tile.worldy(), bs, bs, 0f);
+                        if(todraw instanceof mindustry.world.blocks.environment.StaticWall){
+                            TextureRegion region = todraw.region;
+                            if(todraw.variantRegions != null && todraw.variantRegions.length > 0){
+                                int index = Mathf.randomSeed(tile.pos(), 0, Math.max(0, todraw.variantRegions.length - 1));
+                                if(index >= 0 && index < todraw.variantRegions.length && todraw.variantRegions[index] != null && todraw.variantRegions[index].found()){
+                                    region = todraw.variantRegions[index];
+                                }
+                            }
+                            if(region != null && region.found()){
+                                Draw.rect(region, tile.worldx(), tile.worldy(), region.width * Draw.scl, region.height * Draw.scl, 0f);
+                            }else{
+                                Draw.rect(todraw.fullIcon, tile.worldx(), tile.worldy(), bs, bs, 0f);
+                            }
+                        }else{
+                            Draw.rect(todraw.fullIcon, tile.worldx(), tile.worldy(), bs, bs, 0f);
+                        }
                     }
                 }
             }
         }
         
         if(depthTex && propDepthBuffer != null){
-            Draw.rect(String.valueOf(propDepthBuffer.getTexture()), camera.width / 2f, camera.height / 2f, camera.width, camera.height);
+            Draw.rect(String.valueOf(propDepthBuffer.getTexture()), Core.graphics.getWidth() / 2f, Core.graphics.getHeight() / 2f, Core.graphics.getWidth(), Core.graphics.getHeight());
         }
     }
 
