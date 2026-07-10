@@ -1,6 +1,7 @@
 package MindustryOptiFine;
 
 import arc.*;
+import arc.files.Fi;
 import arc.func.*;
 import arc.graphics.*;
 import arc.graphics.g2d.*;
@@ -24,10 +25,13 @@ import mindustry.game.*;
 import mindustry.game.EventType.*;
 import mindustry.gen.*;
 import mindustry.graphics.*;
+import mindustry.ctype.*;
+import mindustry.core.*;
 import mindustry.mod.*;
 import mindustry.type.*;
 import mindustry.type.weapons.*;
 import mindustry.world.*;
+import mindustry.world.blocks.defense.*;
 import mindustry.world.blocks.defense.turrets.*;
 import mindustry.world.blocks.distribution.*;
 import mindustry.world.blocks.environment.*;
@@ -44,6 +48,8 @@ import static mindustry.Vars.*;
 
 public class MindustryOptiFine extends Mod{
     public static AltLightBatch batch;
+    public static ObjectMap<String, TextureRegion[]> connectWallRegions = new ObjectMap<>();
+    public static ObjectMap<String, TextureRegion[]> connectWallInnerRegions = new ObjectMap<>();
     public static ObjectMap<TextureRegion, TextureRegion> glowEquiv = new ObjectMap<>(), replace = new ObjectMap<>(), shaderReplace = new ObjectMap<>();
     public static ObjectSet<TextureRegion> autoGlowRegions = new ObjectSet<>(), liquidRegions = new ObjectSet<>();
     public static ObjectMap<Shader, Shader> validShaders = new ObjectMap<>();
@@ -149,7 +155,8 @@ public class MindustryOptiFine extends Mod{
             Core.app.post(() -> {
                 load();
                 loadTileView();
-                // 初始化 ShadowShader
+                ConnectWallHandler.load();
+                replaceVanillaWalls();
                 initShadowShader();
             });
         });
@@ -164,6 +171,7 @@ public class MindustryOptiFine extends Mod{
             }
             EdgeRenderer.dispose();
             EdgeRenderer.init();
+            ConnectWallHandler.updateAllConnectedWalls();
         });
 
         Events.run(EventType.Trigger.draw, () -> {
@@ -177,6 +185,12 @@ public class MindustryOptiFine extends Mod{
             if (tiles != null) Shadow.draw(tiles);
             Shadow.drawMap();
         });
+        
+        Events.on(TileChangeEvent.class, e -> {
+            if(e.tile != null && e.tile.build != null && ConnectWallHandler.hasConnectTexture(e.tile.build)){
+                ConnectWallHandler.updateAllConnectedWalls();
+            }
+        });
     }
 
     private void initShadowShader() {
@@ -184,6 +198,105 @@ public class MindustryOptiFine extends Mod{
             Generators.init();
             Shadow.init();
         });
+    }
+
+    private void replaceVanillaWalls() {
+        String[] wallNames = {
+            "beryllium-wall", "plastanium-wall", "carbide-wall", "copper-wall",
+            "phase-wall", "surge-wall", "reinforced-surge-wall", "thorium-wall",
+            "titanium-wall", "tungsten-wall"
+        };
+        
+        int replacedCount = 0;
+        
+        for (String wallName : wallNames) {
+            if (ConnectWallHandler.tiledRegions.containsKey(wallName)) {
+                Block originalBlock = Vars.content.getByName(ContentType.block, wallName);
+                if (originalBlock != null && originalBlock instanceof Wall) {
+                    try {
+                        java.lang.reflect.Field buildTypeField = Block.class.getDeclaredField("buildType");
+                        buildTypeField.setAccessible(true);
+                        
+                        Wall finalWall = (Wall) originalBlock;
+                        arc.func.Prov<mindustry.gen.Building> newBuildType = () -> {
+                            try {
+                                ConnectWallBuild build = new ConnectWallBuild();
+                                java.lang.reflect.Field blockField = mindustry.gen.Building.class.getDeclaredField("block");
+                                blockField.setAccessible(true);
+                                blockField.set(build, finalWall);
+                                return build;
+                            } catch (Exception e) {
+                                Log.err("ConnectWall: failed to create ConnectWallBuild: " + e.getMessage());
+                                return finalWall.newBuilding();
+                            }
+                        };
+                        
+                        buildTypeField.set(originalBlock, newBuildType);
+                        
+                        replacedCount++;
+                        Log.info("ConnectWall: replaced buildType for '" + wallName + "'");
+                    } catch (Exception e) {
+                        Log.err("ConnectWall: failed to replace buildType for '" + wallName + "': " + e.getMessage());
+                    }
+                }
+            }
+        }
+        
+        Log.info("ConnectWall: replaced buildType for " + replacedCount + " vanilla walls");
+    }
+
+    @Override
+    public void packSprites(MultiPacker packer){
+        Fi wallsDir = null;
+        String modName = "mindustry-optifine";
+        
+        for(var mod : Vars.mods.list()){
+            if(mod.main == this){
+                wallsDir = mod.root.child("sprites/blocks/walls");
+                modName = mod.name;
+                break;
+            }
+        }
+        
+        if(wallsDir == null){
+            Log.info("ConnectWall: cannot find mod root directory");
+            return;
+        }
+        
+        if(!wallsDir.exists() || !wallsDir.isDirectory()){
+            Log.info("ConnectWall: walls directory not found: " + wallsDir.path());
+            return;
+        }
+        
+        int loadedCount = 0;
+        
+        for(Fi file : wallsDir.list()){
+            String name = file.nameWithoutExtension();
+            if(name.endsWith("-tiled")){
+                String blockName = name.substring(0, name.length() - 6);
+                try{
+                    Pixmap pixmap = PixmapIO.readPNG(file);
+                    String fullName = modName + "-" + name;
+                    packer.add(MultiPacker.PageType.main, fullName, pixmap);
+                    loadedCount++;
+                    Log.info("ConnectWall: packed tiled texture for " + blockName + " (full name: " + fullName + ", size: " + pixmap.width + "x" + pixmap.height + ")");
+                }catch(Exception e){
+                    Log.err("ConnectWall: failed to pack tiled texture for " + blockName + ": " + e.getMessage());
+                }
+            }else if(name.endsWith("-inner-tiled")){
+                String blockName = name.substring(0, name.length() - 12);
+                try{
+                    Pixmap pixmap = PixmapIO.readPNG(file);
+                    String fullName = modName + "-" + name;
+                    packer.add(MultiPacker.PageType.main, fullName, pixmap);
+                    Log.info("ConnectWall: packed inner-tiled texture for " + blockName + " (full name: " + fullName + ", size: " + pixmap.width + "x" + pixmap.height + ")");
+                }catch(Exception e){
+                    Log.err("ConnectWall: failed to pack inner-tiled texture for " + blockName + ": " + e.getMessage());
+                }
+            }
+        }
+        
+        Log.info("ConnectWall: packed " + loadedCount + " connect wall textures");
     }
 
     @Override
@@ -308,6 +421,8 @@ public class MindustryOptiFine extends Mod{
             st.row();
 
             st.checkPref("edge-enabled", true, b -> EdgeRenderer.enabled = b);
+
+            st.checkPref("connect-wall-enabled", true, b -> ConnectWallHandler.enabled = b);
 
             st.row();
 
@@ -864,7 +979,9 @@ public class MindustryOptiFine extends Mod{
                 boolean setLiquid = (build != null && liquidBlocks.contains(block.id) && ((lc = build.liquids.current()) != null && build.liquids.currentAmount() > 0.001f && glowingLiquids.contains(lc.id)));
 
                 if(setLiquid) batch.setLiquidMode(true);
+                
                 block.drawBase(tile);
+                
                 Draw.reset();
                 Draw.z(Layer.block);
 
@@ -912,6 +1029,8 @@ public class MindustryOptiFine extends Mod{
                 });
                 Draw.draw(Layer.block - 0.09f, () -> staticRenderer.drawWalls());
             }
+            
+            Shadow.updatePropDepthMap();
 
         batch.setGlow(false);
         batch.setAuto(Layer.bullet - 0.02f, true);

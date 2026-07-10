@@ -1,5 +1,5 @@
 #define HIGHP
-#define LIGHTH 4.0
+#define LIGHTH 1.0
 #define MAX_LIGHTS 400
 uniform float u_EDGE_PRECISION;
 uniform sampler2D u_texture;
@@ -12,9 +12,6 @@ uniform int u_lightcount;
 uniform vec2 u_lights[MAX_LIGHTS];
 
 varying vec2 v_texCoords;
-/** Author @BlackDeluxeCat
-* You are not allowed to use this fragment in any place except a Mindustry mod.
-*/
 vec4 unpack(vec2 value){
     vec4 light;
     if(value.x < 0.0){

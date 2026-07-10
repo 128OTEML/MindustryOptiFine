@@ -45,6 +45,11 @@ public class Shadow{
     public static TextureRegion[][] normRegions;
     /** Turret base depth textures, indexed by block ID. Null for non-turret blocks or if base not found. */
     public static TextureRegion[] turretBaseNorms;
+    
+    /** Dynamic prop depth buffer for trees and environment decorations */
+    public static FrameBuffer propDepthBuffer;
+    public static int frameCount = 0;
+    public static final int PROP_UPDATE_INTERVAL = 20;
 
     public static void init(){
         SSShaders.load();
@@ -54,16 +59,32 @@ public class Shadow{
         //load or generate normMaps
         for(int i = 0; i < normRegions.length; i++){
             var block = content.block(i);
-            int w = block.size*tilesize*8, h = block.size*tilesize*8;
             int variant = block.variantRegions != null ? block.variantRegions.length : 0;
             normRegions[i] = new TextureRegion[variant + 1];
 
             for(int v = -1; v < variant; v++){
 
                 Fi file = dataDirectory.child("mods").child("ShadowShader").child(block.name + (v == -1 ? "" : v + 1) + ".png");
-                Fi genFile = dataDirectory.child("mods").child("ShadowShader").child(block.name + (v == -1 ? "" : v + 1) + "-auto.png");
+                Fi genFile = dataDirectory.child("mods").child("ShadowShader").child(block.name + (v == -1 ? "" : v + 1) + "-auto-v3.png");
 
                 Pixmap norm;
+
+                int w, h;
+                if(PropShadowHelper.isProp(block)){
+                    TextureRegion region = v == -1 ? (block.region == null ? block.fullIcon : block.region) : block.variantRegions[v];
+                    if(region != null && region.found()){
+                        float worldW = region.width * Draw.scl;
+                        float worldH = region.height * Draw.scl;
+                        w = (int)(worldW * 8);
+                        h = (int)(worldH * 8);
+                    }else{
+                        w = block.size * tilesize * 8;
+                        h = block.size * tilesize * 8;
+                    }
+                }else{
+                    w = block.size * tilesize * 8;
+                    h = block.size * tilesize * 8;
+                }
 
                 try{
                     norm = PixmapIO.readPNG(file);
@@ -97,8 +118,16 @@ public class Shadow{
                         norm = new Pixmap(w, h);
                         Buffers.copy(lines, 0, shot.pixels, lines.length);
                         Buffers.copy(lines, 0, norm.pixels, lines.length);
-                        //normal mapping
-                        Generators.check(shot, norm);
+                        //normal mapping - 使用高度缩放因子
+                        float heightScale;
+                        if(PropShadowHelper.isProp(block)){
+                            // 道具使用基于类型和区域尺寸的高度缩放
+                            heightScale = PropShadowHelper.getPropHeightScale(block, v == -1 ? (block.region == null ? block.fullIcon : block.region) : block.variantRegions[v]);
+                        }else{
+                            // 普通方块使用block.size/4.0作为高度缩放因子
+                            heightScale = Mathf.clamp(block.size / 4.0f, 0.25f, 1.0f);
+                        }
+                        Generators.check(shot, norm, heightScale);
 
                         if(block instanceof Floor){
                             for(int x = 0; x < norm.width; x++){
@@ -128,7 +157,7 @@ public class Shadow{
                 if(baseRegion != null && baseRegion.found()){
                     int bw = block.size * tilesize * 8, bh = block.size * tilesize * 8;
                     Fi baseFile = dataDirectory.child("mods").child("ShadowShader").child(block.name + "-base.png");
-                    Fi baseGenFile = dataDirectory.child("mods").child("ShadowShader").child(block.name + "-base-auto.png");
+                    Fi baseGenFile = dataDirectory.child("mods").child("ShadowShader").child(block.name + "-base-auto-v3.png");
 
                     Pixmap baseNorm;
                     try{
@@ -163,7 +192,9 @@ public class Shadow{
                             baseNorm = new Pixmap(bw, bh);
                             Buffers.copy(lines, 0, shot.pixels, lines.length);
                             Buffers.copy(lines, 0, baseNorm.pixels, lines.length);
-                            Generators.check(shot, baseNorm);
+                            //normal mapping - 使用block.size/4.0作为高度缩放因子
+                            float heightScale = Mathf.clamp(block.size / 4.0f, 0.25f, 1.0f);
+                            Generators.check(shot, baseNorm, heightScale);
 
                             // 清除透明区域，确保底座深度贴图严格限定在底座轮廓内
                             for(int px = 0; px < baseNorm.width; px++){
@@ -188,9 +219,72 @@ public class Shadow{
             }
         }
 
+        propDepthBuffer = new FrameBuffer();
     }
 
-    
+
+    public static void updatePropDepthMap(){
+        if(propDepthBuffer == null) return;
+        
+        frameCount++;
+        if(frameCount % PROP_UPDATE_INTERVAL != 0) return;
+        
+        propDepthBuffer.resize((int) camera.width, (int) camera.height);
+        propDepthBuffer.begin(Color.clear);
+        
+        Draw.color();
+        Draw.mixcol();
+        
+        var r = camera.bounds(Tmp.r1);
+        int minX = Math.max(0, Mathf.floor(r.x / tilesize));
+        int maxX = Math.min(world.width(), Mathf.ceil((r.x + r.width) / tilesize));
+        int minY = Math.max(0, Mathf.floor(r.y / tilesize));
+        int maxY = Math.min(world.height(), Mathf.ceil((r.y + r.height) / tilesize));
+        
+        if(minX >= maxX || minY >= maxY){
+            propDepthBuffer.end();
+            return;
+        }
+        
+        float bs = tilesize;
+        
+        for(int x = minX; x < maxX; x++){
+            for(int y = minY; y < maxY; y++){
+                var tile = world.tile(x, y);
+                if(tile == null || tile.build != null) continue;
+                
+                Block todraw = tile.block();
+                if(todraw == Blocks.air || !PropShadowHelper.isProp(todraw)) continue;
+                
+                float xw = tile.worldx();
+                float yw = tile.worldy();
+                
+                TextureRegion region = todraw.region;
+                int variantIndex = 0;
+                if(todraw.variantRegions != null && todraw.variantRegions.length > 0){
+                    variantIndex = Mathf.randomSeed(tile.pos(), 0, todraw.variantRegions.length - 1);
+                    if(variantIndex >= 0 && variantIndex < todraw.variantRegions.length && todraw.variantRegions[variantIndex] != null && todraw.variantRegions[variantIndex].found()){
+                        region = todraw.variantRegions[variantIndex];
+                    }
+                }
+                
+                if(region != null && region.found()){
+                    float propW = region.width * Draw.scl;
+                    float propH = region.height * Draw.scl;
+                    
+                    float heightScale = PropShadowHelper.getPropHeightScale(todraw, region);
+                    float depthValue = Math.min(1.0f, Math.max(0.2f, heightScale * 0.6f * 3f));
+                    
+                    Draw.mixcol(new Color(0f, 0f, depthValue, 1f), 1f);
+                    Draw.rect(region, xw, yw, propW, propH, 0f);
+                }
+            }
+        }
+        
+        propDepthBuffer.end();
+        Draw.color();
+    }
+
 
     public static void getIndex(){
         size = RefUtils.getValue(fSize, renderer.lights);
@@ -297,18 +391,45 @@ public class Shadow{
                 if(todraw == Blocks.air) continue;
                 
                 Draw.mixcol();
+                
+                boolean isProp = PropShadowHelper.isProp(todraw);
+                
                 if(depthTex){
                     Mathf.rand.setSeed(tile.pos());
-                    if(todraw.variantRegions == null){
+                    if(isProp){
+                        continue;
+                    }else if(todraw.variantRegions == null){
                         Draw.rect(normRegions[todraw.id][0], tile.worldx(), tile.worldy(), bs, bs, 0f);
                     }else{
                         Draw.rect(normRegions[todraw.id][1 + Mathf.randomSeed(tile.pos(), 0, Math.max(0, todraw.variantRegions.length - 1))], tile.worldx(), tile.worldy(), bs, bs, 0f);
                     }
-                }else if(todraw.cacheLayer == CacheLayer.walls){
+                }else if(todraw.cacheLayer == CacheLayer.walls || isProp){
                     Draw.mixcol(Color.white, 1f);
-                    Draw.rect(todraw.fullIcon, tile.worldx(), tile.worldy(), bs, bs, 0f);
+                    
+                    if(isProp){
+                        TextureRegion region = todraw.region;
+                        if(todraw.variantRegions != null && todraw.variantRegions.length > 0){
+                            int index = Mathf.randomSeed(tile.pos(), 0, todraw.variantRegions.length - 1);
+                            if(index >= 0 && index < todraw.variantRegions.length && todraw.variantRegions[index] != null && todraw.variantRegions[index].found()){
+                                region = todraw.variantRegions[index];
+                            }
+                        }
+                        if(region != null && region.found()){
+                            float propW = region.width * Draw.scl;
+                            float propH = region.height * Draw.scl;
+                            Draw.rect(region, tile.worldx(), tile.worldy(), propW, propH, 0f);
+                        }else{
+                            Draw.rect(todraw.fullIcon, tile.worldx(), tile.worldy(), bs, bs, 0f);
+                        }
+                    }else{
+                        Draw.rect(todraw.fullIcon, tile.worldx(), tile.worldy(), bs, bs, 0f);
+                    }
                 }
             }
+        }
+        
+        if(depthTex && propDepthBuffer != null){
+            Draw.rect(String.valueOf(propDepthBuffer.getTexture()), camera.width / 2f, camera.height / 2f, camera.width, camera.height);
         }
     }
 

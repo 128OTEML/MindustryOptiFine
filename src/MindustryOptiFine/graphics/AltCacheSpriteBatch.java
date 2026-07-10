@@ -68,7 +68,11 @@ public class AltCacheSpriteBatch extends Batch{
         }
 
         void add(TextureRegion region, float x, float y, float originX, float originY, float width, float height, float rotation){
-            if(idx >= vertices.length) return;
+            if(idx >= vertices.length){
+                float[] newVertices = new float[vertices.length * 2];
+                System.arraycopy(vertices, 0, newVertices, 0, vertices.length);
+                vertices = newVertices;
+            }
             texture = region.texture;
 
             float[] vertices = this.vertices;
