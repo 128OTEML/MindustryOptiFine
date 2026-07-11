@@ -11,10 +11,13 @@ import arc.math.*;
 import arc.math.geom.*;
 import arc.struct.*;
 import arc.util.*;
+import arc.input.KeyCode;
 import MindustryOptiFine.graphics.*;
 import MindustryOptiFine.graphics.StaticBlockRenderer.*;
 import MindustryOptiFine.parts.*;
+import MindustryOptiFine.recording.*;
 import MindustryOptiFine.shadow.*;
+import MindustryOptiFine.ui.*;
 import MindustryOptiFine.utils.*;
 import mindustry.*;
 import mindustry.content.*;
@@ -158,9 +161,13 @@ public class MindustryOptiFine extends Mod{
                 ConnectWallHandler.load();
                 replaceVanillaWalls();
                 initShadowShader();
+                ReplayUI.init();
             });
         });
         Events.on(WorldLoadEvent.class, e -> {
+            loadSettings();
+            loadEnvironmentData();
+            
             if(renderEnvironment){
                 staticRenderer.dispose();
                 staticRenderer.begin();
@@ -191,6 +198,15 @@ public class MindustryOptiFine extends Mod{
         Events.on(TileChangeEvent.class, e -> {
             if(e.tile != null && e.tile.build != null && ConnectWallHandler.hasConnectTexture(e.tile.build)){
                 ConnectWallHandler.updateAllConnectedWalls();
+            }
+        });
+
+        Events.run(EventType.Trigger.update, () -> {
+            if(Core.input.keyTap(KeyCode.f9)){
+                ReplayUI.toggleRecording();
+            }
+            if(Core.input.keyTap(KeyCode.f10)){
+                ReplayUI.showDialog();
             }
         });
     }
@@ -501,6 +517,12 @@ public class MindustryOptiFine extends Mod{
                     Vars.dataDirectory.child("mods").child("ShadowShader").findAll(f -> f.extEquals("png")).each(f -> f.delete());
                 });
             }).growX();
+
+            st.row();
+
+            st.button("@replay.title", Icon.list, () -> {
+                ReplayUI.showDialog();
+            }).growX();
         });
     }
 
@@ -778,6 +800,14 @@ public class MindustryOptiFine extends Mod{
 
     void load(){
         loadOverrides();
+        loadEnvironmentData();
+    }
+
+    void loadEnvironmentData(){
+        glowingEnvTiles.clear();
+        glowingLiquidColors.clear();
+        glowingLiquids.clear();
+        liquidBlocks.clear();
 
         EnviroGlow env = new EnviroGlow();
         TextureRegion[] tmpVariants = new TextureRegion[16];
