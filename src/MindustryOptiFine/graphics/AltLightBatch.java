@@ -598,7 +598,7 @@ public class AltLightBatch extends SpriteBatch{
                     }
                     return (f - from) / (to - from);
                 }
-                float clamp(float value){
+                float saturate(float value){
                     return max(min(value, 1.0), 0.0);
                 }
                 
@@ -609,7 +609,7 @@ public class AltLightBatch extends SpriteBatch{
                     
                     float lum = curve((fc.r + fc.g + fc.b) / 3.0, 0.2, 0.6);
                     float sat = curve(max(fc.r, max(fc.g, fc.g)) - min(fc.r, min(fc.g, fc.b)), 0.1, 0.3);
-                    float v = clamp(sat + lum);
+                    float v = saturate(sat + lum);
                     
                     float ca = c.a * v_color.a;
                     
