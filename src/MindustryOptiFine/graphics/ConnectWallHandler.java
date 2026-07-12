@@ -9,6 +9,7 @@ import arc.struct.ObjectMap;
 import arc.util.Log;
 import mindustry.gen.Building;
 import mindustry.gen.Groups;
+import mindustry.world.Block;
 import mindustry.world.Tile;
 import mindustry.world.blocks.TileBitmask;
 import mindustry.world.blocks.defense.Wall;
@@ -27,36 +28,52 @@ public class ConnectWallHandler {
     public static void load() {
         tiledRegions.clear();
         innerTiledRegions.clear();
-        
+
         String modPrefix = "mindustry-optifine-";
-        
+
         String[] wallNames = {
-            "beryllium-wall", "plastanium-wall", "carbide-wall", "copper-wall",
-            "phase-wall", "surge-wall", "reinforced-surge-wall", "thorium-wall",
-            "titanium-wall", "tungsten-wall"
+                "beryllium-wall", "plastanium-wall", "carbide-wall", "copper-wall",
+                "phase-wall", "surge-wall", "reinforced-surge-wall", "thorium-wall",
+                "titanium-wall", "tungsten-wall", "copper-wall-large"
         };
-        
+
         int loadedCount = 0;
-        
+
         for (String blockName : wallNames) {
+            // 获取方块定义
+            Block block = Vars.content.block(blockName);
+            if (block == null) {
+                Log.warn("ConnectWallHandler: block not found: " + blockName);
+                continue;
+            }
+
+            // 每个状态的像素尺寸 = 方块尺寸 * 32像素/格
+            int stateSize = block.size * 32;
+
             String tiledName = modPrefix + blockName + "-tiled";
             if (Core.atlas.has(tiledName)) {
                 TextureRegion tiledRegion = Core.atlas.find(tiledName);
-                TextureRegion[] regions = SpriteUtil.splitRegionArray(tiledRegion, 32, 32);
+                // 按状态尺寸切割
+                TextureRegion[] regions = SpriteUtil.splitRegionArray(tiledRegion, stateSize, stateSize);
                 tiledRegions.put(blockName, regions);
                 loadedCount++;
-                Log.info("ConnectWallHandler: loaded tiled texture for " + blockName + " (name: " + tiledName + ", size: " + tiledRegion.width + "x" + tiledRegion.height + ")");
+                Log.info("ConnectWallHandler: loaded tiled texture for " + blockName +
+                        " (name: " + tiledName + ", size: " + tiledRegion.width + "x" + tiledRegion.height +
+                        ", block size: " + block.size + ", state size: " + stateSize + ")");
             }
-            
+
             String innerName = modPrefix + blockName + "-inner-tiled";
             if (Core.atlas.has(innerName)) {
                 TextureRegion innerRegion = Core.atlas.find(innerName);
-                TextureRegion[] regions = SpriteUtil.splitRegionArray(innerRegion, 32, 32);
+                // 同样按状态尺寸切割
+                TextureRegion[] regions = SpriteUtil.splitRegionArray(innerRegion, stateSize, stateSize);
                 innerTiledRegions.put(blockName, regions);
-                Log.info("ConnectWallHandler: loaded inner-tiled texture for " + blockName + " (name: " + innerName + ", size: " + innerRegion.width + "x" + innerRegion.height + ")");
+                Log.info("ConnectWallHandler: loaded inner-tiled texture for " + blockName +
+                        " (name: " + innerName + ", size: " + innerRegion.width + "x" + innerRegion.height +
+                        ", block size: " + block.size + ", state size: " + stateSize + ")");
             }
         }
-        
+
         Log.info("ConnectWallHandler: loaded " + loadedCount + " connect wall textures");
     }
 
@@ -102,19 +119,22 @@ public class ConnectWallHandler {
         String blockName = build.block.name;
         TextureRegion[] regions = tiledRegions.get(blockName);
         if (regions == null) return;
-        
+
         int pos = build.pos();
         int drawIndex = drawIndices.get(pos, 0);
         int innerDrawIndex = innerDrawIndices.get(pos, 0);
-        
+
         if (drawIndex >= regions.length) drawIndex = 0;
-        
-        Draw.rect(regions[drawIndex], build.x, build.y);
-        
+
+        // 每个状态的像素尺寸 = 方块尺寸 * 32像素/格
+        float stateSize = build.block.size * 32f;
+
+        Draw.rect(regions[drawIndex], build.x, build.y, stateSize, stateSize);
+
         TextureRegion[] innerRegions = innerTiledRegions.get(blockName);
         if (innerRegions != null && drawIndex == 13) {
             if (innerDrawIndex >= innerRegions.length) innerDrawIndex = 0;
-            Draw.rect(innerRegions[innerDrawIndex], build.x, build.y);
+            Draw.rect(innerRegions[innerDrawIndex], build.x, build.y, stateSize, stateSize);
         }
     }
 
