@@ -222,7 +222,7 @@ public class MindustryOptiFine extends Mod{
         String[] wallNames = {
             "beryllium-wall", "plastanium-wall", "carbide-wall", "copper-wall",
             "phase-wall", "surge-wall", "reinforced-surge-wall", "thorium-wall",
-            "titanium-wall", "tungsten-wall", "copper-wall-large"
+            "titanium-wall", "tungsten-wall", "copper-wall-large", "titanium-wall-large"
         };
         
         int replacedCount = 0;

@@ -17,7 +17,7 @@ public class ConnectWallBuild extends Building {
 
     // 缓存的方块边界
     private int minX, minY, maxX, maxY;
-    private int size;
+    private int centerX, centerY;
 
     private static final Point2[] checkPos = {
             new Point2(0, 1),
@@ -38,17 +38,18 @@ public class ConnectWallBuild extends Building {
 
     // 更新缓存的边界数据
     private void updateBounds() {
-        size = block.size;
+        int size = block.size;
         minX = tile.x;
         minY = tile.y;
         maxX = tile.x + size - 1;
         maxY = tile.y + size - 1;
+        centerX = tile.x + size / 2;
+        centerY = tile.y + size / 2;
     }
 
-    // 检查两个方块是否完全面对齐（整面接触）
-    private boolean isFullyAligned(Building other, Point2 direction) {
+    // 检查两个方块是否相邻（AABB碰撞检测）
+    private boolean isAdjacentTo(Building other) {
         if (other == null || other.block != this.block) return false;
-        if (other == this) return false;
 
         int otherMinX = other.tile.x;
         int otherMinY = other.tile.y;
@@ -60,117 +61,82 @@ public class ConnectWallBuild extends Building {
         boolean yOverlap = (minY <= otherMaxY && maxY >= otherMinY);
         if (xOverlap && yOverlap) return false;
 
-        // 根据方向检查是否完全对齐
-        if (direction.x > 0 && direction.y == 0) {
-            // 右侧：Y轴必须完全重叠
-            return maxX + 1 == otherMinX && minY >= otherMinY && maxY <= otherMaxY;
-        } else if (direction.x < 0 && direction.y == 0) {
-            // 左侧：Y轴必须完全重叠
-            return minX - 1 == otherMaxX && minY >= otherMinY && maxY <= otherMaxY;
-        } else if (direction.x == 0 && direction.y > 0) {
-            // 上侧：X轴必须完全重叠
-            return maxY + 1 == otherMinY && minX >= otherMinX && maxX <= otherMaxX;
-        } else if (direction.x == 0 && direction.y < 0) {
-            // 下侧：X轴必须完全重叠
-            return minY - 1 == otherMaxY && minX >= otherMinX && maxX <= otherMaxX;
-        } else if (direction.x > 0 && direction.y > 0) {
-            // 右上：检查右上角是否对齐
-            return maxX + 1 == otherMinX && maxY + 1 == otherMinY &&
-                    minY >= otherMinY && maxY <= otherMaxY &&
-                    minX >= otherMinX && maxX <= otherMaxX;
-        } else if (direction.x > 0 && direction.y < 0) {
-            // 右下：检查右下角是否对齐
-            return maxX + 1 == otherMinX && minY - 1 == otherMaxY &&
-                    minY >= otherMinY && maxY <= otherMaxY &&
-                    minX >= otherMinX && maxX <= otherMaxX;
-        } else if (direction.x < 0 && direction.y > 0) {
-            // 左上：检查左上角是否对齐
-            return minX - 1 == otherMaxX && maxY + 1 == otherMinY &&
-                    minY >= otherMinY && maxY <= otherMaxY &&
-                    minX >= otherMinX && maxX <= otherMaxX;
-        } else if (direction.x < 0 && direction.y < 0) {
-            // 左下：检查左下角是否对齐
-            return minX - 1 == otherMaxX && minY - 1 == otherMaxY &&
-                    minY >= otherMinY && maxY <= otherMaxY &&
-                    minX >= otherMinX && maxX <= otherMaxX;
-        }
+        // 计算两个矩形之间的最小距离
+        int dx = 0;
+        if (maxX < otherMinX) dx = otherMinX - maxX;
+        else if (minX > otherMaxX) dx = minX - otherMaxX;
 
-        return false;
+        int dy = 0;
+        if (maxY < otherMinY) dy = otherMinY - maxY;
+        else if (minY > otherMaxY) dy = minY - otherMaxY;
+
+        // 如果两个矩形在8方向相邻（距离为1格）
+        return dx <= 1 && dy <= 1;
     }
 
-    // 检查某个位置是否属于同类型的其他方块
-    private Building getSameBlockAt(int x, int y) {
+    // 检查某个位置是否被同类型方块占据
+    private boolean isSameBlockAt(int x, int y) {
         Building other = Vars.world.build(x, y);
-        if (other != null && other.block == this.block && other != this) {
-            return other;
-        }
-        return null;
+        return other != null && other.block == this.block;
     }
 
-    // 检查某个方向是否有完全对齐的相邻方块
-    private boolean hasAlignedNeighbor(Point2 dir) {
-        int startX, startY, endX, endY;
+    // 检查某个位置是否属于当前方块
+    private boolean isPartOfThisBlock(int x, int y) {
+        return x >= minX && x <= maxX && y >= minY && y <= maxY;
+    }
 
-        // 根据方向确定检查范围
-        if (dir.x > 0 && dir.y == 0) {
-            // 右侧：检查右边缘外侧
+    // 检查某个方向是否有相邻的同类型方块
+    private boolean hasNeighborInDirection(Point2 dir) {
+        int size = block.size;
+
+        // 根据方向确定检查的边缘
+        int startX, startY, endX, endY;
+        boolean checkHorizontal = (dir.x != 0);
+        boolean checkVertical = (dir.y != 0);
+
+        if (dir.x > 0) {
+            // 检查右边缘
             startX = maxX + 1;
             endX = maxX + 1;
             startY = minY;
             endY = maxY;
-        } else if (dir.x < 0 && dir.y == 0) {
-            // 左侧：检查左边缘外侧
+        } else if (dir.x < 0) {
+            // 检查左边缘
             startX = minX - 1;
             endX = minX - 1;
             startY = minY;
-            endY = maxY;
-        } else if (dir.x == 0 && dir.y > 0) {
-            // 上侧：检查上边缘外侧
-            startX = minX;
-            endX = maxX;
-            startY = maxY + 1;
-            endY = maxY + 1;
-        } else if (dir.x == 0 && dir.y < 0) {
-            // 下侧：检查下边缘外侧
-            startX = minX;
-            endX = maxX;
-            startY = minY - 1;
-            endY = minY - 1;
-        } else if (dir.x > 0 && dir.y > 0) {
-            // 右上：检查右边缘和上边缘的交接处
-            startX = maxX + 1;
-            endX = maxX + 1;
-            startY = minY;
-            endY = maxY + 1;
-        } else if (dir.x > 0 && dir.y < 0) {
-            // 右下：检查右边缘和下边缘的交接处
-            startX = maxX + 1;
-            endX = maxX + 1;
-            startY = minY - 1;
-            endY = maxY;
-        } else if (dir.x < 0 && dir.y > 0) {
-            // 左上：检查左边缘和上边缘的交接处
-            startX = minX - 1;
-            endX = minX - 1;
-            startY = minY;
-            endY = maxY + 1;
-        } else if (dir.x < 0 && dir.y < 0) {
-            // 左下：检查左边缘和下边缘的交接处
-            startX = minX - 1;
-            endX = minX - 1;
-            startY = minY - 1;
             endY = maxY;
         } else {
-            return false; // 无效方向
+            startX = minX;
+            endX = maxX;
+            startY = minY;
+            endY = maxY;
         }
 
-        // 检查边缘的所有格子
+        if (dir.y > 0) {
+            // 检查上边缘
+            startY = maxY + 1;
+            endY = maxY + 1;
+            if (dir.x == 0) {
+                startX = minX;
+                endX = maxX;
+            }
+        } else if (dir.y < 0) {
+            // 检查下边缘
+            startY = minY - 1;
+            endY = minY - 1;
+            if (dir.x == 0) {
+                startX = minX;
+                endX = maxX;
+            }
+        }
+
+        // 遍历边缘的所有格子
         for (int x = startX; x <= endX; x++) {
             for (int y = startY; y <= endY; y++) {
-                Building other = getSameBlockAt(x, y);
-                if (other != null) {
-                    // 检查这个方块是否完全对齐
-                    if (isFullyAligned(other, dir)) {
+                if (isSameBlockAt(x, y)) {
+                    Building other = Vars.world.build(x, y);
+                    if (other != null && other != this) {
                         return true;
                     }
                 }
@@ -179,61 +145,33 @@ public class ConnectWallBuild extends Building {
         return false;
     }
 
-    // 获取指定方向上完全对齐的相邻方块
-    private ConnectWallBuild getAlignedNeighbor(Point2 dir) {
-        int startX, startY, endX, endY;
+    // 获取指定方向上相邻的方块
+    private ConnectWallBuild getNeighborInDirection(Point2 dir) {
+        int size = block.size;
 
-        if (dir.x > 0) {
-            startX = maxX + 1;
-            endX = maxX + 1;
-            startY = minY;
-            endY = maxY;
-        } else if (dir.x < 0) {
-            startX = minX - 1;
-            endX = minX - 1;
-            startY = minY;
-            endY = maxY;
-        } else if (dir.y > 0) {
-            startX = minX;
-            endX = maxX;
-            startY = maxY + 1;
-            endY = maxY + 1;
-        } else {
-            startX = minX;
-            endX = maxX;
-            startY = minY - 1;
-            endY = minY - 1;
-        }
+        // 根据方向确定检查位置
+        int checkX, checkY;
+        if (dir.x > 0) checkX = maxX + 1;
+        else if (dir.x < 0) checkX = minX - 1;
+        else checkX = centerX;
 
-        for (int x = startX; x <= endX; x++) {
-            for (int y = startY; y <= endY; y++) {
-                Building other = getSameBlockAt(x, y);
-                if (other instanceof ConnectWallBuild wall && isFullyAligned(wall, dir)) {
+        if (dir.y > 0) checkY = maxY + 1;
+        else if (dir.y < 0) checkY = minY - 1;
+        else checkY = centerY;
+
+        // 检查该位置及其周围
+        for (int dx = -size; dx <= size; dx++) {
+            for (int dy = -size; dy <= size; dy++) {
+                Building other = Vars.world.build(checkX + dx, checkY + dy);
+                if (other instanceof ConnectWallBuild wall &&
+                        wall.block == this.block &&
+                        wall != this &&
+                        isAdjacentTo(wall)) {
                     return wall;
                 }
             }
         }
         return null;
-    }
-
-    // 获取所有完全对齐的相邻方块（用于更新）
-    private Seq<ConnectWallBuild> getAlignedNeighbors() {
-        Seq<ConnectWallBuild> neighbors = new Seq<>();
-
-        // 检查4个主要方向
-        Point2[] directions = {
-                new Point2(1, 0), new Point2(-1, 0),
-                new Point2(0, 1), new Point2(0, -1)
-        };
-
-        for (Point2 dir : directions) {
-            ConnectWallBuild neighbor = getAlignedNeighbor(dir);
-            if (neighbor != null) {
-                neighbors.add(neighbor);
-            }
-        }
-
-        return neighbors;
     }
 
     public void updateDrawRegion() {
@@ -246,7 +184,7 @@ public class ConnectWallBuild extends Building {
         // 检查8个方向
         for (int i = 0; i < 8; i++) {
             Point2 dir = Geometry.d8[i];
-            if (hasAlignedNeighbor(dir)) {
+            if (hasNeighborInDirection(dir)) {
                 drawIndex |= (1 << i);
             }
         }
@@ -257,7 +195,7 @@ public class ConnectWallBuild extends Building {
         if (drawIndex == 13 && ConnectWallHandler.hasInnerTexture(blockName)) {
             for (int i = 0; i < 4; i++) {
                 Point2 dir = Geometry.d4[i];
-                ConnectWallBuild neighbor = getAlignedNeighbor(dir);
+                ConnectWallBuild neighbor = getNeighborInDirection(dir);
                 if (neighbor != null && neighbor.drawIndex == 13) {
                     drawInnerIndex |= (1 << i);
                 }
@@ -287,8 +225,23 @@ public class ConnectWallBuild extends Building {
         updateBounds();
         connectedWalls.clear();
 
-        // 获取所有完全对齐的相邻方块
-        connectedWalls = getAlignedNeighbors();
+        // 检查所有可能的相邻位置
+        int size = block.size;
+        int range = size + 2; // 扩大检测范围
+
+        for (int dx = -range; dx <= range; dx++) {
+            for (int dy = -range; dy <= range; dy++) {
+                if (dx == 0 && dy == 0) continue;
+
+                Building other = Vars.world.build(tile.x + dx, tile.y + dy);
+                if (other instanceof ConnectWallBuild wall &&
+                        wall.block == this.block &&
+                        wall != this &&
+                        isAdjacentTo(wall)) {
+                    connectedWalls.add(wall);
+                }
+            }
+        }
 
         updateDrawRegion();
     }
