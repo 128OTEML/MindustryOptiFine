@@ -47,8 +47,12 @@ public class ConnectWallBuild extends Building {
         centerY = tile.y + size / 2;
     }
 
-    // 检查两个方块是否相邻（AABB碰撞检测）
-    private boolean isAdjacentTo(Building other) {
+    /**
+     * 检查两个方块是否在某个方向上完全对齐（面完全接触）
+     * @param other 另一个方块
+     * @return true 如果两个方块完全对齐并接触
+     */
+    private boolean isFullyAlignedWith(Building other) {
         if (other == null || other.block != this.block) return false;
 
         int otherMinX = other.tile.x;
@@ -56,12 +60,12 @@ public class ConnectWallBuild extends Building {
         int otherMaxX = other.tile.x + other.block.size - 1;
         int otherMaxY = other.tile.y + other.block.size - 1;
 
-        // 检查是否重叠（如果是同一个方块）
+        // 排除自身重叠
         boolean xOverlap = (minX <= otherMaxX && maxX >= otherMinX);
         boolean yOverlap = (minY <= otherMaxY && maxY >= otherMinY);
         if (xOverlap && yOverlap) return false;
 
-        // 计算两个矩形之间的最小距离
+        // 计算水平和垂直距离
         int dx = 0;
         if (maxX < otherMinX) dx = otherMinX - maxX;
         else if (minX > otherMaxX) dx = minX - otherMaxX;
@@ -70,8 +74,150 @@ public class ConnectWallBuild extends Building {
         if (maxY < otherMinY) dy = otherMinY - maxY;
         else if (minY > otherMaxY) dy = minY - otherMaxY;
 
-        // 如果两个矩形在8方向相邻（距离为1格）
-        return dx <= 1 && dy <= 1;
+        // 先检查基本相邻（距离为1格或交错接触）
+        if (dx > 1 || dy > 1) return false;
+
+        // 检查是否完全对齐
+        return isFullyAlignedInDirection(other, dx, dy);
+    }
+
+    /**
+     * 检查两个方块在特定方向上是否完全对齐
+     */
+    private boolean isFullyAlignedInDirection(Building other, int dx, int dy) {
+        int otherMinX = other.tile.x;
+        int otherMinY = other.tile.y;
+        int otherMaxX = other.tile.x + other.block.size - 1;
+        int otherMaxY = other.tile.y + other.block.size - 1;
+
+        // 水平相邻（dx == 1 且 dy == 0）
+        if (dx == 1 && dy == 0) {
+            // 检查垂直方向是否完全重叠
+            return isVerticalFullyOverlapped(other);
+        }
+
+        // 垂直相邻（dy == 1 且 dx == 0）
+        if (dy == 1 && dx == 0) {
+            // 检查水平方向是否完全重叠
+            return isHorizontalFullyOverlapped(other);
+        }
+
+        // 对角相邻（dx == 1 && dy == 1）
+        if (dx == 1 && dy == 1) {
+            // 检查角是否完全接触
+            return isCornerFullyAligned(other, dx, dy);
+        }
+
+        // 交错接触（dx == 0 && dy == 0）
+        if (dx == 0 && dy == 0) {
+            return isInterlockingContact(other);
+        }
+
+        // 其他情况（距离大于1或不在标准方向）
+        return false;
+    }
+
+    /**
+     * 检测交错接触（两个方块在边缘交错但不重叠）
+     * 例如：2x2 方块 A 和 B 在垂直方向交错 1 格
+     */
+    private boolean isInterlockingContact(Building other) {
+        int otherMinX = other.tile.x;
+        int otherMinY = other.tile.y;
+        int otherMaxX = other.tile.x + other.block.size - 1;
+        int otherMaxY = other.tile.y + other.block.size - 1;
+
+        // 检查是否在水平方向接触但垂直方向交错
+        boolean horizontalContact = (maxX + 1 == otherMinX) || (minX == otherMaxX + 1);
+        boolean verticalOverlap = (minY <= otherMaxY && maxY >= otherMinY);
+
+        // 检查是否在垂直方向接触但水平方向交错
+        boolean verticalContact = (maxY + 1 == otherMinY) || (minY == otherMaxY + 1);
+        boolean horizontalOverlap = (minX <= otherMaxX && maxX >= otherMinX);
+
+        // 如果水平接触且垂直完全覆盖，则为有效接触
+        if (horizontalContact && verticalOverlap) {
+            return isVerticalFullyOverlapped(other);
+        }
+
+        // 如果垂直接触且水平完全覆盖，则为有效接触
+        if (verticalContact && horizontalOverlap) {
+            return isHorizontalFullyOverlapped(other);
+        }
+
+        return false;
+    }
+
+    /**
+     * 检查垂直方向是否完全重叠
+     */
+    private boolean isVerticalFullyOverlapped(Building other) {
+        int otherMinY = other.tile.y;
+        int otherMaxY = other.tile.y + other.block.size - 1;
+
+        // 检查垂直范围是否完全覆盖
+        return (minY <= otherMinY && maxY >= otherMaxY) ||
+                (otherMinY <= minY && otherMaxY >= maxY) ||
+                (minY >= otherMinY && maxY <= otherMaxY);
+    }
+
+    /**
+     * 检查水平方向是否完全重叠
+     */
+    private boolean isHorizontalFullyOverlapped(Building other) {
+        int otherMinX = other.tile.x;
+        int otherMaxX = other.tile.x + other.block.size - 1;
+
+        // 检查水平范围是否完全覆盖
+        return (minX <= otherMinX && maxX >= otherMaxX) ||
+                (otherMinX <= minX && otherMaxX >= maxX) ||
+                (minX >= otherMinX && maxX <= otherMaxX);
+    }
+
+    /**
+     * 检查对角方向是否完全对齐
+     */
+    private boolean isCornerFullyAligned(Building other, int dx, int dy) {
+        int otherMinX = other.tile.x;
+        int otherMinY = other.tile.y;
+        int otherMaxX = other.tile.x + other.block.size - 1;
+        int otherMaxY = other.tile.y + other.block.size - 1;
+
+        // 检查角接触面积
+        int contactWidth, contactHeight;
+
+        // 右上对角（当前在左上，其他在右下）
+        if (maxX + 1 == otherMinX && maxY + 1 == otherMinY) {
+            contactWidth = Math.min(maxX - minX + 1, otherMaxX - otherMinX + 1);
+            contactHeight = Math.min(maxY - minY + 1, otherMaxY - otherMinY + 1);
+            return contactWidth >= 1 && contactHeight >= 1;
+        }
+        // 右下对角（当前在右上，其他在左下）
+        else if (maxX + 1 == otherMinX && minY == otherMaxY + 1) {
+            contactWidth = Math.min(maxX - minX + 1, otherMaxX - otherMinX + 1);
+            contactHeight = Math.min(maxY - minY + 1, otherMaxY - otherMinY + 1);
+            return contactWidth >= 1 && contactHeight >= 1;
+        }
+        // 左下对角（当前在右下，其他在左上）
+        else if (minX == otherMaxX + 1 && maxY + 1 == otherMinY) {
+            contactWidth = Math.min(maxX - minX + 1, otherMaxX - otherMinX + 1);
+            contactHeight = Math.min(maxY - minY + 1, otherMaxY - otherMinY + 1);
+            return contactWidth >= 1 && contactHeight >= 1;
+        }
+        // 左上对角（当前在左下，其他在右上）
+        else if (minX == otherMaxX + 1 && minY == otherMaxY + 1) {
+            contactWidth = Math.min(maxX - minX + 1, otherMaxX - otherMinX + 1);
+            contactHeight = Math.min(maxY - minY + 1, otherMaxY - otherMinY + 1);
+            return contactWidth >= 1 && contactHeight >= 1;
+        }
+
+        return false;
+    }
+
+    // 检查两个方块是否相邻（完全对齐版本）
+    private boolean isAdjacentTo(Building other) {
+        if (other == null || other.block != this.block) return false;
+        return isFullyAlignedWith(other);
     }
 
     // 检查某个位置是否被同类型方块占据
@@ -85,14 +231,12 @@ public class ConnectWallBuild extends Building {
         return x >= minX && x <= maxX && y >= minY && y <= maxY;
     }
 
-    // 检查某个方向是否有相邻的同类型方块
+    // 检查某个方向是否有相邻的同类型方块（完全对齐版本）
     private boolean hasNeighborInDirection(Point2 dir) {
         int size = block.size;
 
         // 根据方向确定检查的边缘
         int startX, startY, endX, endY;
-        boolean checkHorizontal = (dir.x != 0);
-        boolean checkVertical = (dir.y != 0);
 
         if (dir.x > 0) {
             // 检查右边缘
@@ -136,7 +280,7 @@ public class ConnectWallBuild extends Building {
             for (int y = startY; y <= endY; y++) {
                 if (isSameBlockAt(x, y)) {
                     Building other = Vars.world.build(x, y);
-                    if (other != null && other != this) {
+                    if (other != null && other != this && isFullyAlignedWith(other)) {
                         return true;
                     }
                 }
@@ -145,7 +289,7 @@ public class ConnectWallBuild extends Building {
         return false;
     }
 
-    // 获取指定方向上相邻的方块
+    // 获取指定方向上相邻的方块（完全对齐版本）
     private ConnectWallBuild getNeighborInDirection(Point2 dir) {
         int size = block.size;
 
@@ -166,7 +310,7 @@ public class ConnectWallBuild extends Building {
                 if (other instanceof ConnectWallBuild wall &&
                         wall.block == this.block &&
                         wall != this &&
-                        isAdjacentTo(wall)) {
+                        isFullyAlignedWith(wall)) {
                     return wall;
                 }
             }
@@ -237,7 +381,7 @@ public class ConnectWallBuild extends Building {
                 if (other instanceof ConnectWallBuild wall &&
                         wall.block == this.block &&
                         wall != this &&
-                        isAdjacentTo(wall)) {
+                        isFullyAlignedWith(wall)) {
                     connectedWalls.add(wall);
                 }
             }

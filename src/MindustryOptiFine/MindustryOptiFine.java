@@ -6,6 +6,7 @@ import arc.func.*;
 import arc.graphics.*;
 import arc.graphics.g2d.*;
 import arc.graphics.g2d.TextureAtlas.*;
+import arc.scene.ui.layout.Table;
 import arc.graphics.gl.*;
 import arc.math.*;
 import arc.math.geom.*;
@@ -14,11 +15,17 @@ import arc.util.*;
 import arc.input.KeyCode;
 import MindustryOptiFine.graphics.*;
 import MindustryOptiFine.graphics.StaticBlockRenderer.*;
+import MindustryOptiFine.graphics.particles.ParticleManager;
+import MindustryOptiFine.graphics.metaballs.MetaballManager;
+import MindustryOptiFine.shaders.*;
 import MindustryOptiFine.parts.*;
 import MindustryOptiFine.recording.*;
 import MindustryOptiFine.shadow.*;
 import MindustryOptiFine.ui.*;
 import MindustryOptiFine.utils.*;
+import MindustryOptiFine.core.graphics.postprocessing.PostProcessingPipeline;
+import MindustryOptiFine.core.graphics.automators.RenderTargetManager;
+import MindustryOptiFine.core.graphics.CoreGraphicsInit;
 import mindustry.*;
 import mindustry.content.*;
 import mindustry.core.*;
@@ -32,6 +39,7 @@ import mindustry.graphics.*;
 import mindustry.ctype.*;
 import mindustry.mod.*;
 import mindustry.type.*;
+import mindustry.ui.dialogs.*;
 import mindustry.type.weapons.*;
 import mindustry.world.*;
 import mindustry.world.blocks.defense.*;
@@ -74,6 +82,12 @@ public class MindustryOptiFine extends Mod{
     static boolean test = false;
     static StaticBlockRenderer staticRenderer;
     static EdgeRenderer edgeRenderer;
+
+    public static boolean autoQualityEnabled = true;
+    public static float currentZoom = 1f;
+    public static float targetQualityScale = 1f;
+    public static float currentQualityScale = 1f;
+    public static float qualityTransitionSpeed = 0.05f;
     public static IntFloatMap glowingLiquidColors = new IntFloatMap();
     public static IntSet glowingLiquids = new IntSet();
     public static IntSet liquidBlocks = new IntSet();
@@ -110,6 +124,20 @@ public class MindustryOptiFine extends Mod{
             EdgeRenderer.init();
             AdvancedCamera.init();
             setBloom(true);
+            
+            ModShaders.init();
+            ShaderCache.init();
+            ParticleManager.init();
+            MetaballManager.init();
+            
+            System.out.println("MindustryOptiFine: about to call CoreGraphicsInit.loadAll()");
+            try {
+                CoreGraphicsInit.loadAll();
+                System.out.println("MindustryOptiFine: CoreGraphicsInit.loadAll() completed successfully");
+            } catch (Exception ex) {
+                System.err.println("MindustryOptiFine: CoreGraphicsInit.loadAll() failed: " + ex.getMessage());
+                ex.printStackTrace();
+            }
 
             screenShader = new Shader("""
                     attribute vec4 a_position;
@@ -158,10 +186,16 @@ public class MindustryOptiFine extends Mod{
             Core.app.post(() -> {
                 load();
                 loadTileView();
-                ConnectWallHandler.load();
-                replaceVanillaWalls();
-                initShadowShader();
-                ReplayUI.init();
+                // 延迟初始化，等待所有MOD加载完毕
+                Time.runTask(5f, () -> {
+                    ConnectWallHandler.init();  // 这里会完成所有墙体的扫描和替换
+                    initShadowShader();
+                    ReplayUI.init();
+                    
+                    
+                    });
+                
+                
             });
         });
         Events.on(WorldLoadEvent.class, e -> {
@@ -191,10 +225,12 @@ public class MindustryOptiFine extends Mod{
 
             if (tiles != null) Shadow.draw(tiles);
             Shadow.drawMap();
+            
+            ShaderCache.update();
         });
 
         ShadowMain.initEvents();
-        
+
         Events.on(TileChangeEvent.class, e -> {
             if(e.tile != null && e.tile.build != null && ConnectWallHandler.hasConnectTexture(e.tile.build)){
                 ConnectWallHandler.updateAllConnectedWalls();
@@ -208,7 +244,46 @@ public class MindustryOptiFine extends Mod{
             if(Core.input.keyTap(KeyCode.f10)){
                 ReplayUI.showDialog();
             }
+            
+            if(autoQualityEnabled && Core.camera != null){
+                updateDynamicQuality();
+            }
+            
+            CoreGraphicsInit.updateAll();
         });
+        
+        Events.run(EventType.Trigger.draw, () -> {
+            CoreGraphicsInit.drawAll();
+        });
+    }
+    
+    private void updateDynamicQuality(){
+        currentZoom = renderer.getDisplayScale();
+        
+        if(currentZoom <= 0.5f){
+            targetQualityScale = 0.5f;
+        }else if(currentZoom <= 1.0f){
+            targetQualityScale = 0.75f;
+        }else if(currentZoom <= 2.0f){
+            targetQualityScale = 1.0f;
+        }else{
+            targetQualityScale = Math.min(currentZoom * 0.5f + 0.5f, 1.5f);
+        }
+        
+        currentQualityScale += (targetQualityScale - currentQualityScale) * qualityTransitionSpeed;
+        
+        if(bloom != null){
+            int targetBloomQuality = Math.max(1, (int)(bloomQuality * currentQualityScale));
+            bloom.resize(Core.graphics.getWidth(), Core.graphics.getHeight(), targetBloomQuality);
+            bloom.blurPasses = Math.max(1, (int)(Core.settings.getInt("al-bloom-blur-amount", 2) * currentQualityScale));
+            bloom.flarePasses = Math.max(0, (int)(Core.settings.getInt("al-bloom-flare-amount", 3) * currentQualityScale));
+        }
+        
+        if(currentZoom < 0.7f){
+            EdgeRenderer.enabled = false;
+        }else{
+            EdgeRenderer.enabled = Core.settings.getBool("edge-enabled", true);
+        }
     }
 
     private void initShadowShader() {
@@ -216,51 +291,6 @@ public class MindustryOptiFine extends Mod{
             Generators.init();
             Shadow.init();
         });
-    }
-
-    private void replaceVanillaWalls() {
-        String[] wallNames = {
-            "beryllium-wall", "plastanium-wall", "carbide-wall", "copper-wall",
-            "phase-wall", "surge-wall", "reinforced-surge-wall", "thorium-wall",
-            "titanium-wall", "tungsten-wall", "copper-wall-large", "titanium-wall-large"
-        };
-        
-        int replacedCount = 0;
-        
-        for (String wallName : wallNames) {
-            if (ConnectWallHandler.tiledRegions.containsKey(wallName)) {
-                Block originalBlock = Vars.content.getByName(ContentType.block, wallName);
-                if (originalBlock != null && originalBlock instanceof Wall) {
-                    try {
-                        java.lang.reflect.Field buildTypeField = Block.class.getDeclaredField("buildType");
-                        buildTypeField.setAccessible(true);
-                        
-                        Wall finalWall = (Wall) originalBlock;
-                        arc.func.Prov<mindustry.gen.Building> newBuildType = () -> {
-                            try {
-                                ConnectWallBuild build = new ConnectWallBuild();
-                                java.lang.reflect.Field blockField = mindustry.gen.Building.class.getDeclaredField("block");
-                                blockField.setAccessible(true);
-                                blockField.set(build, finalWall);
-                                return build;
-                            } catch (Exception e) {
-                                Log.err("ConnectWall: failed to create ConnectWallBuild: " + e.getMessage());
-                                return finalWall.newBuilding();
-                            }
-                        };
-                        
-                        buildTypeField.set(originalBlock, newBuildType);
-                        
-                        replacedCount++;
-                        Log.info("ConnectWall: replaced buildType for '" + wallName + "'");
-                    } catch (Exception e) {
-                        Log.err("ConnectWall: failed to replace buildType for '" + wallName + "': " + e.getMessage());
-                    }
-                }
-            }
-        }
-        
-        Log.info("ConnectWall: replaced buildType for " + replacedCount + " vanilla walls");
     }
 
     @Override
@@ -512,6 +542,8 @@ public class MindustryOptiFine extends Mod{
 
             st.row();
 
+            st.checkPref("al-auto-quality", true, b -> autoQualityEnabled = b);
+
             st.button("Delete Depth Textures", Icon.trash, () -> {
                 ui.showConfirm("Delete all(" + dataDirectory.child("mods").child("ShadowShader").findAll(f -> f.extEquals("png")).size + ") depth textures? Your custom textures will also be deleted. Restart game to re-generate.", () -> {
                     Vars.dataDirectory.child("mods").child("ShadowShader").findAll(f -> f.extEquals("png")).each(f -> f.delete());
@@ -523,7 +555,211 @@ public class MindustryOptiFine extends Mod{
             st.button("@replay.title", Icon.list, () -> {
                 ReplayUI.showDialog();
             }).growX();
+
+            st.row();
+
+            st.button("@mindustry-optifine.modpanel", Icon.layers, () -> {
+                new ModPanelDialog().show();
+            }).growX();
+
+            st.row();
+
+            st.button("@mindustry-optifine.shader-test", Icon.layers, () -> {
+                showShaderTestDialog();
+            }).growX();
         });
+    }
+    
+    void showShaderTestDialog(){
+        BaseDialog dialog = new BaseDialog("@mindustry-optifine.shader-test");
+        
+        dialog.cont.pane(p -> {
+            p.add("[accent]Shader Library Test").pad(10).center();
+            p.row();
+            
+            testShaderModule(p, "Mod Panel Shader", 128, 64, () -> {
+                Draw.shader(ModShaders.panel);
+                Draw.color(Color.white);
+                if(ShaderCache.getNoiseTexture() != null){
+                    Draw.rect(ShaderCache.getNoiseTexture(), 64, 32, 128, 64);
+                }
+                Draw.shader();
+            });
+            
+            testShaderModule(p, "Powerful Sun Shader", 128, 128, () -> {
+                Draw.shader(ModShaders.sun);
+                ModShaders.sun.setUniformf("u_inColor", Color.yellow);
+                Draw.color(Color.white);
+                Draw.rect(Core.atlas.find("whiteui"), 64, 64, 128, 128);
+                Draw.shader();
+            });
+            
+            testShaderModule(p, "Blur Shader", 128, 64, () -> {
+                Draw.shader(ModShaders.blur);
+                ModShaders.blur.radius = 8f;
+                ModShaders.blur.horizontal = true;
+                Draw.color(Color.white);
+                Draw.rect(Core.atlas.find("whiteui"), 64, 32, 128, 64);
+                Draw.shader();
+            });
+            
+            testShaderModule(p, "Vignette Shader", 128, 64, () -> {
+                Draw.shader(ModShaders.vignette);
+                ModShaders.vignette.intensity = 0.8f;
+                ModShaders.vignette.smoothness = 0.3f;
+                Draw.color(Color.white);
+                Draw.rect(Core.atlas.find("whiteui"), 64, 32, 128, 64);
+                Draw.shader();
+            });
+            
+            testShaderModule(p, "Color Tweak", 128, 64, () -> {
+                Draw.shader(ModShaders.colortweak);
+                ModShaders.colortweak.brightness = 1.2f;
+                ModShaders.colortweak.contrast = 1.5f;
+                ModShaders.colortweak.saturation = 1.3f;
+                Draw.color(Color.white);
+                Draw.rect(Core.atlas.find("whiteui"), 64, 32, 128, 64);
+                Draw.shader();
+            });
+            
+            testShaderModule(p, "Distortion Shader", 128, 64, () -> {
+                Draw.shader(ModShaders.distortion);
+                ModShaders.distortion.strength = 0.1f;
+                Draw.color(Color.white);
+                Draw.rect(Core.atlas.find("whiteui"), 64, 32, 128, 64);
+                Draw.shader();
+            });
+            
+            testShaderModule(p, "Glow Shader", 128, 64, () -> {
+                Draw.shader(ModShaders.glow);
+                ModShaders.glow.threshold = 0.5f;
+                ModShaders.glow.intensity = 2f;
+                Draw.color(Color.white);
+                Draw.rect(Core.atlas.find("whiteui"), 64, 32, 128, 64);
+                Draw.shader();
+            });
+            
+            testShaderModule(p, "Chromatic Aberration", 128, 64, () -> {
+                Draw.shader(ModShaders.chromatic);
+                ModShaders.chromatic.intensity = 0.05f;
+                Draw.color(Color.white);
+                Draw.rect(Core.atlas.find("whiteui"), 64, 32, 128, 64);
+                Draw.shader();
+            });
+            
+            testShaderModule(p, "Scanline Shader", 128, 64, () -> {
+                Draw.shader(ModShaders.scanline);
+                ModShaders.scanline.lineHeight = 3f;
+                ModShaders.scanline.opacity = 0.3f;
+                Draw.color(Color.white);
+                Draw.rect(Core.atlas.find("whiteui"), 64, 32, 128, 64);
+                Draw.shader();
+            });
+            
+            testShaderModule(p, "Pixelation Shader", 128, 64, () -> {
+                Draw.shader(ModShaders.pixelation);
+                ModShaders.pixelation.pixelSize = 16f;
+                Draw.color(Color.white);
+                Draw.rect(Core.atlas.find("whiteui"), 64, 32, 128, 64);
+                Draw.shader();
+            });
+            
+            testShaderModule(p, "Primitive Shader", 128, 64, () -> {
+                Draw.shader(ModShaders.primitive);
+                ModShaders.primitive.color = Color.cyan;
+                Draw.rect(Core.atlas.find("whiteui"), 64, 32, 128, 64);
+                Draw.shader();
+            });
+            
+            testShaderModule(p, "Metaball Shader", 128, 64, () -> {
+                Draw.shader(ModShaders.metaball);
+                ModShaders.metaball.threshold = 0.5f;
+                Draw.color(Color.white);
+                Draw.rect(Core.atlas.find("whiteui"), 64, 32, 128, 64);
+                Draw.shader();
+            });
+            
+            p.add("[accent]Core Graphics Module Test").pad(10).center();
+            p.row();
+            
+            testShaderModule(p, "Primitive Renderer (Trail)", 128, 64, () -> {
+                Draw.color(Color.cyan);
+                Lines.stroke(4f);
+                float x = 10f;
+                for(int i = 0; i < 9; i++){
+                    float y1 = 32 + Mathf.sin(i * 0.5f) * 20;
+                    float y2 = 32 + Mathf.sin((i+1) * 0.5f) * 20;
+                    Lines.line(x + i * 12, y1, x + (i+1) * 12, y2);
+                }
+                Lines.stroke(1f);
+                Draw.color();
+            });
+            
+            testShaderModule(p, "Primitive Renderer (Circle)", 128, 64, () -> {
+                Draw.color(Color.orange);
+                Fill.circle(64, 32, 20f);
+                Draw.color();
+            });
+            
+            testShaderModule(p, "Particle System", 128, 64, () -> {
+                float time = Time.time;
+                for(int i = 0; i < 10; i++){
+                    float angle = (time + i * 0.6f) % (Mathf.PI * 2);
+                    float radius = 20f;
+                    float x = 64 + Mathf.cos(angle) * radius;
+                    float y = 32 + Mathf.sin(angle) * radius;
+                    float size = 4 + Mathf.sin(time * 3 + i) * 2;
+                    Draw.color(Color.blue, 0.5f);
+                    Fill.circle(x, y, size);
+                }
+                Draw.color();
+            });
+            
+            testShaderModule(p, "Metaball Effect", 128, 64, () -> {
+                float time = Time.time;
+                for(int i = 0; i < 3; i++){
+                    float angle = (time * 0.3f + i * 2.1f) % (Mathf.PI * 2);
+                    float radius = 30f;
+                    float x = 64 + Mathf.cos(angle) * radius;
+                    float y = 32 + Mathf.sin(angle) * radius;
+                    Draw.color(Color.purple, 0.3f);
+                    Fill.circle(x, y, 15f);
+                    Draw.color(Color.pink, 0.2f);
+                    Fill.circle(x, y, 25f);
+                }
+                Draw.color();
+            });
+            
+            p.add("[lightgray]UI Components").pad(5).left();
+            p.row();
+            AnimatedIcon icon = new AnimatedIcon(Core.atlas.find("whiteui"));
+            p.add(icon).size(64).pad(5);
+            LockableToggle toggle = new LockableToggle("Toggle");
+            p.add(toggle).width(150).pad(5);
+            p.row();
+            
+        }).width(500).maxHeight(800);
+        
+        dialog.addCloseButton();
+        dialog.show();
+    }
+    
+    private void testShaderModule(Table parent, String name, float width, float height, Runnable render){
+        parent.add("[lightgray]" + name).pad(5).left();
+        parent.row();
+        
+        arc.scene.ui.Image shaderImage = new arc.scene.ui.Image(){
+            @Override
+            public void draw(){
+                Draw.color(Color.black);
+                Fill.rect(getX(0), getY(0), getWidth(), getHeight());
+                render.run();
+                super.draw();
+            }
+        };
+        shaderImage.setSize(width, height);
+        parent.add(shaderImage).pad(5);
+        parent.row();
     }
 
     @SuppressWarnings("unchecked")
@@ -581,6 +817,8 @@ public class MindustryOptiFine extends Mod{
         if(advCam){
             AdvancedCamera.setEnabled(true);
         }
+        
+        autoQualityEnabled = Core.settings.getBool("al-auto-quality", true);
     }
 
     public void setBloom(boolean on){

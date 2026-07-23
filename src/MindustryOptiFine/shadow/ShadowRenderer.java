@@ -9,6 +9,7 @@ import arc.struct.*;
 import mindustry.Vars;
 import mindustry.world.*;
 import mindustry.world.blocks.environment.Floor;
+import MindustryOptiFine.MindustryOptiFine;
 
 public class ShadowRenderer {
     public static float BASE_SHADOW_ANGLE = 210f, SHADOW_LENGTH = 10f, SHADOW_ALPHA = 0.38f, weatherMult = 1f;
@@ -259,13 +260,31 @@ public class ShadowRenderer {
 
     // Helpers
 
-    /** FBO render scale based on graphics quality setting. */
+    /** FBO render scale based on graphics quality setting and camera zoom. */
     private static float qualityScale() {
+        float baseScale;
         switch (graphicsQuality) {
-            case 0:  return 0.50f; // Low
-            case 1:  return 0.75f; // Medium
-            default: return 1.00f; // High
+            case 0:  baseScale = 0.50f; break;
+            case 1:  baseScale = 0.75f; break;
+            default: baseScale = 1.00f; break;
         }
+        
+        if(MindustryOptiFine.autoQualityEnabled){
+            float zoom = Vars.renderer.getDisplayScale();
+            float zoomScale;
+            if(zoom <= 0.5f){
+                zoomScale = 0.5f;
+            }else if(zoom <= 1.0f){
+                zoomScale = 0.75f;
+            }else if(zoom <= 2.0f){
+                zoomScale = 1.0f;
+            }else{
+                zoomScale = Math.min(zoom * 0.5f + 0.5f, 1.5f);
+            }
+            return baseScale * zoomScale;
+        }
+        
+        return baseScale;
     }
 
     private static void applyShader(float dx, float dy, float sunElev, TextureRegion src, float cx, float cy, float cw, float ch) {

@@ -21,9 +21,12 @@ public class StaticBlockRenderer{
     Seq<Tile> edges = new Seq<>(), glowing = new Seq<>(), glowingFloor = new Seq<>();
 
     AltCacheSpriteBatch cbatch = new AltCacheSpriteBatch();
+    InstancedSpriteBatch instancedBatch = new InstancedSpriteBatch();
     AltCacheSprites[][] caches, floorCaches;
 
     static Rect tmpRect = new Rect();
+    
+    public static boolean useInstancedRendering = true;
 
     //TODO draw walls and floors if it has a glow region.
 
@@ -188,29 +191,102 @@ public class StaticBlockRenderer{
         int minX = Mathf.clamp((int)((r.x / Vars.tilesize) / 16f), 0, caches.length), maxX = Mathf.clamp(Mathf.ceilPositive(((r.x + r.width) / Vars.tilesize) / 16f), 0, caches.length);
         int minY = Mathf.clamp((int)((r.y / Vars.tilesize) / 16f), 0, caches[0].length), maxY = Mathf.clamp(Mathf.ceilPositive(((r.y + r.height) / Vars.tilesize) / 16f), 0, caches[0].length);
 
-        for(int x = minX; x < maxX; x++){
-            for(int y = minY; y < maxY; y++){
-                AltCacheSprites cache = caches[x][y];
-                if(cache != null){
-                    cache.render();
+        if(useInstancedRendering && InstancedSpriteBatch.enabled){
+            drawWallsInstanced(minX, maxX, minY, maxY);
+        }else{
+            for(int x = minX; x < maxX; x++){
+                for(int y = minY; y < maxY; y++){
+                    AltCacheSprites cache = caches[x][y];
+                    if(cache != null){
+                        cache.render();
+                    }
                 }
             }
         }
     }
+    
+    private void drawWallsInstanced(int minX, int maxX, int minY, int maxY){
+        instancedBatch.begin();
+        
+        for(int x = minX; x < maxX; x++){
+            for(int y = minY; y < maxY; y++){
+                AltCacheSprites cache = caches[x][y];
+                if(cache != null){
+                    for(CacheData cd : cache.data){
+                        if(cd.texture != null){
+                            float[] vs = cd.vertices;
+                            for(int i = 0; i < vs.length; i += 24){
+                                float vx = vs[i];
+                                float vy = vs[i + 1];
+                                float vx2 = vs[i + 12];
+                                float vy2 = vs[i + 13];
+                                float u = vs[i + 3];
+                                float v = vs[i + 4];
+                                float u2 = vs[i + 15];
+                                float v2 = vs[i + 16];
+                                
+                                TextureRegion region = new TextureRegion(cd.texture, u, v, u2 - u, v2 - v);
+                                instancedBatch.draw(region, vx, vy, vx2 - vx, vy2 - vy);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        instancedBatch.end();
+    }
+
     public void drawFloors(){
         Rect r = Core.camera.bounds(tmpRect);
 
         int minX = Mathf.clamp((int)((r.x / Vars.tilesize) / 16f), 0, floorCaches.length), maxX = Mathf.clamp(Mathf.ceilPositive(((r.x + r.width) / Vars.tilesize) / 16f), 0, floorCaches.length);
         int minY = Mathf.clamp((int)((r.y / Vars.tilesize) / 16f), 0, floorCaches[0].length), maxY = Mathf.clamp(Mathf.ceilPositive(((r.y + r.height) / Vars.tilesize) / 16f), 0, floorCaches[0].length);
 
+        if(useInstancedRendering && InstancedSpriteBatch.enabled){
+            drawFloorsInstanced(minX, maxX, minY, maxY);
+        }else{
+            for(int x = minX; x < maxX; x++){
+                for(int y = minY; y < maxY; y++){
+                    AltCacheSprites cache = floorCaches[x][y];
+                    if(cache != null){
+                        cache.render();
+                    }
+                }
+            }
+        }
+    }
+    
+    private void drawFloorsInstanced(int minX, int maxX, int minY, int maxY){
+        instancedBatch.begin();
+        
         for(int x = minX; x < maxX; x++){
             for(int y = minY; y < maxY; y++){
                 AltCacheSprites cache = floorCaches[x][y];
                 if(cache != null){
-                    cache.render();
+                    for(CacheData cd : cache.data){
+                        if(cd.texture != null){
+                            float[] vs = cd.vertices;
+                            for(int i = 0; i < vs.length; i += 24){
+                                float vx = vs[i];
+                                float vy = vs[i + 1];
+                                float vx2 = vs[i + 12];
+                                float vy2 = vs[i + 13];
+                                float u = vs[i + 3];
+                                float v = vs[i + 4];
+                                float u2 = vs[i + 15];
+                                float v2 = vs[i + 16];
+                                
+                                TextureRegion region = new TextureRegion(cd.texture, u, v, u2 - u, v2 - v);
+                                instancedBatch.draw(region, vx, vy, vx2 - vx, vy2 - vy);
+                            }
+                        }
+                    }
                 }
             }
         }
+        
+        instancedBatch.end();
     }
 
     public void dispose(){
@@ -247,6 +323,8 @@ public class StaticBlockRenderer{
         edges.clear();
         glowing.clear();
         glowingFloor.clear();
+        
+        instancedBatch.dispose();
     }
 
     public static class EnviroGlow{
