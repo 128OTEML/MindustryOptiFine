@@ -54,11 +54,6 @@ public class AdditiveBloom{
     }
 
     public void render(Texture texture){
-        if(intensity <= 0f){
-            Draw.blit(texture, MindustryOptiFine.screenShader);
-            return;
-        }
-
         Gl.disable(Gl.blend);
 
         if(intensity != lastIntens){

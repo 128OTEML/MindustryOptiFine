@@ -81,7 +81,6 @@ public class MindustryOptiFine extends Mod{
     static boolean hideVanillaLights = false, renderEnvironment = true;
     static boolean test = false;
     static StaticBlockRenderer staticRenderer;
-    static EdgeRenderer edgeRenderer;
 
     public static boolean autoQualityEnabled = true;
     public static float currentZoom = 1f;
@@ -121,7 +120,6 @@ public class MindustryOptiFine extends Mod{
             subBuffer = new FrameBuffer();
             subBuffer2 = new FrameBuffer();
             staticRenderer = new StaticBlockRenderer();
-            EdgeRenderer.init();
             AdvancedCamera.init();
             setBloom(true);
             
@@ -203,15 +201,12 @@ public class MindustryOptiFine extends Mod{
             loadEnvironmentData();
             
             if(renderEnvironment){
-                staticRenderer.dispose();
                 staticRenderer.begin();
                 for(Tile tile : Vars.world.tiles){
                     staticRenderer.handleTile(tile);
                 }
                 staticRenderer.end();
             }
-            EdgeRenderer.dispose();
-            EdgeRenderer.init();
             ConnectWallHandler.updateAllConnectedWalls();
         });
 
@@ -277,12 +272,6 @@ public class MindustryOptiFine extends Mod{
             bloom.resize(Core.graphics.getWidth(), Core.graphics.getHeight(), targetBloomQuality);
             bloom.blurPasses = Math.max(1, (int)(Core.settings.getInt("al-bloom-blur-amount", 2) * currentQualityScale));
             bloom.flarePasses = Math.max(0, (int)(Core.settings.getInt("al-bloom-flare-amount", 3) * currentQualityScale));
-        }
-        
-        if(currentZoom < 0.7f){
-            EdgeRenderer.enabled = false;
-        }else{
-            EdgeRenderer.enabled = Core.settings.getBool("edge-enabled", true);
         }
     }
 
@@ -527,8 +516,6 @@ public class MindustryOptiFine extends Mod{
             });
 
             st.row();
-
-            st.checkPref("edge-enabled", true, b -> EdgeRenderer.enabled = b);
 
             st.checkPref("connect-wall-enabled", true, b -> ConnectWallHandler.enabled = b);
 
@@ -787,7 +774,7 @@ public class MindustryOptiFine extends Mod{
     }
 
     void loadSettings(){
-        bloomQuality = Mathf.clamp(Core.settings.getInt("al-bloom-quality", 4), 1, 16);
+        bloomQuality = Core.settings.getInt("al-bloom-quality", 4);
         hideVanillaLights = Core.settings.getBool("al-hide-lights", false);
         setBloom(Core.settings.getBool("al-bloom-enabled", false));
         renderEnvironment = Core.settings.getBool("al-environment-enabled", true);
@@ -803,16 +790,15 @@ public class MindustryOptiFine extends Mod{
         ShadowMain.loadSettings();
 
         Shadow.depthTex = Core.settings.getBool("depthTex", false);
-        Shadow.precision = Mathf.clamp(Core.settings.getInt("precision", 8), 1, 32);
+        Shadow.precision = Core.settings.getInt("precision", 8);
         Shadow.zoomPrec = Core.settings.getBool("zoomPrec", false);
-        Shadow.lightLowPass = Mathf.clamp(Core.settings.getInt("lightLowPass", 8), 0, 128);
-        Shadow.maxLights = Mathf.clamp(Core.settings.getInt("maxLights", 100), 0, 1000);
+        Shadow.lightLowPass = Core.settings.getInt("lightLowPass", 8);
+        Shadow.maxLights = Core.settings.getInt("maxLights", 100);
         Shadow.debug = Core.settings.getBool("debug", false);
 
-        EdgeRenderer.enabled = Core.settings.getBool("edge-enabled", true);
         ConnectWallHandler.enabled = Core.settings.getBool("connect-wall-enabled", true);
 
-        AdvancedCamera.sensitivity = Mathf.clamp(Core.settings.getInt("camera-sensitivity", 100) / 100f, 0.1f, 5f);
+        AdvancedCamera.sensitivity = Core.settings.getInt("camera-sensitivity", 100) / 100f;
         boolean advCam = Core.settings.getBool("advanced-camera", false);
         if(advCam){
             AdvancedCamera.setEnabled(true);
@@ -1350,15 +1336,7 @@ public class MindustryOptiFine extends Mod{
 
         if(renderEnvironment){
                 Draw.draw(Layer.floor, () -> {
-                    PerformanceStats.start("staticRenderer.drawFloors");
                     staticRenderer.drawFloors();
-                    PerformanceStats.end("staticRenderer.drawFloors");
-
-                    if(EdgeRenderer.hasEdge() && tileView != null){
-                        for(Tile tile : tileView){
-                            EdgeRenderer.draw(tile);
-                        }
-                    }
 
                     FloorRenderer fr = Vars.renderer.blocks.floor;
 
@@ -1369,8 +1347,6 @@ public class MindustryOptiFine extends Mod{
                 });
                 Draw.draw(Layer.block - 0.09f, () -> staticRenderer.drawWalls());
             }
-            
-            Shadow.updatePropDepthMap();
 
         batch.setGlow(false);
         batch.setAuto(Layer.bullet - 0.02f, true);
@@ -1461,13 +1437,9 @@ public class MindustryOptiFine extends Mod{
         Blending.normal.apply();
 
         if(bloomActive && bloom != null){
-            PerformanceStats.start("bloom.render");
             bloom.resize(Core.graphics.getWidth(), Core.graphics.getHeight(), bloomQuality);
             bloom.render(buffer.getTexture());
-            PerformanceStats.end("bloom.render");
         }
-        
-        PerformanceStats.frameEnd();
     }
 
     void hideLights(){

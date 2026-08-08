@@ -2,7 +2,6 @@ package MindustryOptiFine;
 
 import arc.Core;
 import arc.files.Fi;
-import arc.graphics.Color;
 import arc.graphics.gl.Shader;
 import arc.math.Mathf;
 import arc.struct.FloatSeq;
@@ -45,12 +44,7 @@ public class SSShaders{
             setUniformf("u_texsize", Core.camera.width, Core.camera.height);
             setUniformf("u_invsize", 1f/Core.camera.width, 1f/Core.camera.height);
 
-            Color ambient = Vars.state.rules.ambientLight;
-            float ambientAlpha = Vars.state.rules.lighting ? ambient.a : 1f;
-            
-            setUniformf("u_ambientLight", ambientAlpha);
-            setUniformf("u_ambientColor", ambient.r, ambient.g, ambient.b);
-            
+            setUniformf("u_ambientLight", Vars.state.rules.ambientLight.a);
             setUniformi("u_lightcount", data.size/2);
             setUniform2fv("u_lights", data.items, 0, data.size);
         }

@@ -289,44 +289,6 @@ public class StaticBlockRenderer{
         instancedBatch.end();
     }
 
-    public void dispose(){
-        if(caches != null){
-            for(int x = 0; x < caches.length; x++){
-                for(int y = 0; y < caches[x].length; y++){
-                    if(caches[x][y] != null){
-                        for(CacheData cd : caches[x][y].data){
-                            if(cd.texture != null){
-                                cd.texture.dispose();
-                            }
-                        }
-                    }
-                }
-            }
-            caches = null;
-        }
-        
-        if(floorCaches != null){
-            for(int x = 0; x < floorCaches.length; x++){
-                for(int y = 0; y < floorCaches[x].length; y++){
-                    if(floorCaches[x][y] != null){
-                        for(CacheData cd : floorCaches[x][y].data){
-                            if(cd.texture != null){
-                                cd.texture.dispose();
-                            }
-                        }
-                    }
-                }
-            }
-            floorCaches = null;
-        }
-        
-        edges.clear();
-        glowing.clear();
-        glowingFloor.clear();
-        
-        instancedBatch.dispose();
-    }
-
     public static class EnviroGlow{
         public TextureRegion region, large;
         public TextureRegion[] variants;

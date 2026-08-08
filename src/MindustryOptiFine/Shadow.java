@@ -19,12 +19,9 @@ import mindustry.world.blocks.defense.turrets.*;
 import mindustry.world.blocks.environment.*;
 import mindustry.world.draw.*;
 import MindustryOptiFine.utils.*;
-import MindustryOptiFine.graphics.ConnectWallHandler.*;
 
 import java.lang.reflect.*;
 
-import static MindustryOptiFine.MindustryOptiFine.*;
-import static MindustryOptiFine.graphics.ConnectWallHandler.*;
 import static arc.Core.*;
 import static mindustry.Vars.*;
 
@@ -48,11 +45,6 @@ public class Shadow{
     public static TextureRegion[][] normRegions;
     /** Turret base depth textures, indexed by block ID. Null for non-turret blocks or if base not found. */
     public static TextureRegion[] turretBaseNorms;
-    
-    /** Dynamic prop depth buffer for trees and environment decorations */
-    public static FrameBuffer propDepthBuffer;
-    public static int frameCount = 0;
-    public static final int PROP_UPDATE_INTERVAL = 20;
 
     public static void init(){
         SSShaders.load();
@@ -62,33 +54,16 @@ public class Shadow{
         //load or generate normMaps
         for(int i = 0; i < normRegions.length; i++){
             var block = content.block(i);
-            if((block instanceof mindustry.world.blocks.environment.Floor && ((mindustry.world.blocks.environment.Floor)block).isLiquid)) continue;
+            int w = block.size*tilesize*8, h = block.size*tilesize*8;
             int variant = block.variantRegions != null ? block.variantRegions.length : 0;
             normRegions[i] = new TextureRegion[variant + 1];
 
             for(int v = -1; v < variant; v++){
 
                 Fi file = dataDirectory.child("mods").child("ShadowShader").child(block.name + (v == -1 ? "" : v + 1) + ".png");
-                Fi genFile = dataDirectory.child("mods").child("ShadowShader").child(block.name + (v == -1 ? "" : v + 1) + "-auto-v3.png");
+                Fi genFile = dataDirectory.child("mods").child("ShadowShader").child(block.name + (v == -1 ? "" : v + 1) + "-auto.png");
 
                 Pixmap norm;
-
-                int w, h;
-                if(PropShadowHelper.isProp(block) || block instanceof mindustry.world.blocks.environment.StaticWall){
-                    TextureRegion region = v == -1 ? (block.region == null ? block.fullIcon : block.region) : block.variantRegions[v];
-                    if(region != null && region.found()){
-                        float worldW = region.width * Draw.scl;
-                        float worldH = region.height * Draw.scl;
-                        w = (int)(worldW * 8);
-                        h = (int)(worldH * 8);
-                    }else{
-                        w = block.size * tilesize * 8;
-                        h = block.size * tilesize * 8;
-                    }
-                }else{
-                    w = block.size * tilesize * 8;
-                    h = block.size * tilesize * 8;
-                }
 
                 try{
                     norm = PixmapIO.readPNG(file);
@@ -122,16 +97,8 @@ public class Shadow{
                         norm = new Pixmap(w, h);
                         Buffers.copy(lines, 0, shot.pixels, lines.length);
                         Buffers.copy(lines, 0, norm.pixels, lines.length);
-                        //normal mapping - 使用高度缩放因子
-                        float heightScale;
-                        if(PropShadowHelper.isProp(block) || block instanceof mindustry.world.blocks.environment.StaticWall){
-                            // 道具和墙体使用基于类型和区域尺寸的高度缩放
-                            heightScale = PropShadowHelper.getPropHeightScale(block, v == -1 ? (block.region == null ? block.fullIcon : block.region) : block.variantRegions[v]);
-                        }else{
-                            // 普通方块使用block.size/4.0作为高度缩放因子
-                            heightScale = Mathf.clamp(block.size / 4.0f, 0.25f, 1.0f);
-                        }
-                        Generators.check(shot, norm, heightScale);
+                        //normal mapping
+                        Generators.check(shot, norm);
 
                         if(block instanceof Floor){
                             for(int x = 0; x < norm.width; x++){
@@ -151,7 +118,7 @@ public class Shadow{
                 normRegions[i][v + 1] = normRegion;
             }
 
-            // --- 炮台底座深度贴图独立生成 ---
+            // --- 炮台底座深度贴图独立生成（保留：只画底座层） ---
             if(block instanceof Turret turret && turret.drawer instanceof DrawTurret dt){
                 if(turretBaseNorms == null){
                     turretBaseNorms = new TextureRegion[content.blocks().size];
@@ -161,7 +128,7 @@ public class Shadow{
                 if(baseRegion != null && baseRegion.found()){
                     int bw = block.size * tilesize * 8, bh = block.size * tilesize * 8;
                     Fi baseFile = dataDirectory.child("mods").child("ShadowShader").child(block.name + "-base.png");
-                    Fi baseGenFile = dataDirectory.child("mods").child("ShadowShader").child(block.name + "-base-auto-v3.png");
+                    Fi baseGenFile = dataDirectory.child("mods").child("ShadowShader").child(block.name + "-base-auto.png");
 
                     Pixmap baseNorm;
                     try{
@@ -196,9 +163,8 @@ public class Shadow{
                             baseNorm = new Pixmap(bw, bh);
                             Buffers.copy(lines, 0, shot.pixels, lines.length);
                             Buffers.copy(lines, 0, baseNorm.pixels, lines.length);
-                            //normal mapping - 使用block.size/4.0作为高度缩放因子
-                            float heightScale = Mathf.clamp(block.size / 4.0f, 0.25f, 1.0f);
-                            Generators.check(shot, baseNorm, heightScale);
+                            //normal mapping
+                            Generators.check(shot, baseNorm);
 
                             // 清除透明区域，确保底座深度贴图严格限定在底座轮廓内
                             for(int px = 0; px < baseNorm.width; px++){
@@ -222,74 +188,7 @@ public class Shadow{
                 }
             }
         }
-
-        propDepthBuffer = new FrameBuffer();
     }
-
-
-    public static void updatePropDepthMap(){
-        if(propDepthBuffer == null) return;
-        
-        frameCount++;
-        if(frameCount % PROP_UPDATE_INTERVAL != 0) return;
-        
-        propDepthBuffer.resize(Core.graphics.getWidth(), Core.graphics.getHeight());
-        propDepthBuffer.begin(Color.clear);
-        
-        Draw.proj(camera);
-        Draw.color();
-        Draw.mixcol();
-        
-        var r = camera.bounds(Tmp.r1);
-        int minX = Math.max(0, Mathf.floor(r.x / tilesize));
-        int maxX = Math.min(world.width(), Mathf.ceil((r.x + r.width) / tilesize));
-        int minY = Math.max(0, Mathf.floor(r.y / tilesize));
-        int maxY = Math.min(world.height(), Mathf.ceil((r.y + r.height) / tilesize));
-        
-        if(minX >= maxX || minY >= maxY){
-            propDepthBuffer.end();
-            return;
-        }
-        
-        float bs = tilesize;
-        
-        for(int x = minX; x < maxX; x++){
-            for(int y = minY; y < maxY; y++){
-                var tile = world.tile(x, y);
-                if(tile == null || tile.build != null) continue;
-                
-                Block todraw = tile.block();
-                if(todraw == Blocks.air || !PropShadowHelper.isProp(todraw)) continue;
-                
-                float xw = tile.worldx();
-                float yw = tile.worldy();
-                
-                TextureRegion region = todraw.region;
-                int variantIndex = 0;
-                if(todraw.variantRegions != null && todraw.variantRegions.length > 0){
-                    variantIndex = Mathf.randomSeed(tile.pos(), 0, todraw.variantRegions.length - 1);
-                    if(variantIndex >= 0 && variantIndex < todraw.variantRegions.length && todraw.variantRegions[variantIndex] != null && todraw.variantRegions[variantIndex].found()){
-                        region = todraw.variantRegions[variantIndex];
-                    }
-                }
-                
-                if(region != null && region.found()){
-                    float propW = region.width * Draw.scl;
-                    float propH = region.height * Draw.scl;
-                    
-                    float heightScale = PropShadowHelper.getPropHeightScale(todraw, region);
-                    float depthValue = Math.min(1.0f, Math.max(0.2f, heightScale * 0.6f * 3f));
-                    
-                    Draw.mixcol(new Color(0f, 0f, depthValue, 1f), 1f);
-                    Draw.rect(region, xw, yw, propW, propH, 0f);
-                }
-            }
-        }
-        
-        propDepthBuffer.end();
-        Draw.color();
-    }
-
 
     public static void getIndex(){
         size = RefUtils.getValue(fSize, renderer.lights);
@@ -329,7 +228,6 @@ public class Shadow{
             if(tile.build instanceof BaseTurret.BaseTurretBuild){
                 // ==================== 炮台：仅绘制底座层 ====================
                 // 炮管阴影/深度贴图完全由原版 DrawTurret 处理，Shadow 系统不再绘制任何炮管内容
-
                 TextureRegion baseRegion = null;
                 if(tile.block() instanceof Turret turret && turret.drawer instanceof DrawTurret dt){
                     baseRegion = dt.base;
@@ -352,31 +250,15 @@ public class Shadow{
                         Draw.rect(normRegions[tile.block().id][0], x, y, bs, bs, baseRot);
                     }
                 }
-                // 注意：此处已删除所有炮管层绘制代码
 
             }else{
-                // ==================== 普通建筑（原逻辑） ====================
-                float rot = 0f;
-                if(tile.build != null){
-                    rot = tile.build.drawrot();
-                }
-
+                // ==================== 普通建筑 ====================
+                float rot = tile.build == null ? 0f : tile.build.drawrot();
                 if(!depthTex){
                     Draw.mixcol(Color.white, 1f);
                     Draw.rect(tile.block().fullIcon, x, y, bs, bs, rot);
                 }else{
-                    if(tile.build != null && tile.build.block instanceof mindustry.world.blocks.defense.Wall && enabled){
-                        continue;
-                    }
                     Draw.rect(normRegions[tile.block().id][0], x, y, bs, bs, rot);
-                }
-            }
-        }
-        
-        if(depthTex){
-            for(Tile tile : tiles){
-                if(tile.build != null && tile.build.block instanceof mindustry.world.blocks.defense.Wall){
-                    drawConnectWallDepth(tile.build);
                 }
             }
         }
@@ -384,107 +266,37 @@ public class Shadow{
 
     public static void drawMap(){
         if(!shadow && !debug) return;
-        
         Draw.z(getLayer());
         Draw.color();
-        
         var r = camera.bounds(Tmp.r1);
-        int minX = Math.max(0, Mathf.floor(r.x / tilesize));
-        int maxX = Math.min(world.width(), Mathf.ceil((r.x + r.width) / tilesize));
-        int minY = Math.max(0, Mathf.floor(r.y / tilesize));
-        int maxY = Math.min(world.height(), Mathf.ceil((r.y + r.height) / tilesize));
-        
-        if(minX >= maxX || minY >= maxY) return;
-        
-        float bs = tilesize;
-        
-        for(int x = minX; x < maxX; x++){
-            for(int y = minY; y < maxY; y++){
+        for(int x = Mathf.floor(r.x/tilesize); x < Mathf.ceil((r.x + r.width)/tilesize) ; x++){
+            for(int y = Mathf.floor(r.y/tilesize); y < Mathf.ceil((r.y + r.height)/tilesize) ; y++){
                 var tile = world.tile(x, y);
                 if(tile == null || tile.build != null) continue;
-                
-                Block todraw = tile.block();
-                if(todraw == Blocks.air || (todraw instanceof mindustry.world.blocks.environment.Floor && ((mindustry.world.blocks.environment.Floor)todraw).isLiquid)) continue;
-                
+                Block todraw = tile.block() != Blocks.air ? tile.block() : null;
+                //TODO texture variants
+                //Block todraw = tile.block() != Blocks.air ? tile.block() : tile.overlay() != Blocks.air ? tile.overlay() : tile.floor();
+                if(todraw == null) continue;
+                float bs = tilesize;
                 Draw.mixcol();
-                
-                boolean isProp = PropShadowHelper.isProp(todraw);
-                
                 if(depthTex){
                     Mathf.rand.setSeed(tile.pos());
-                    if(isProp){
-                        continue;
-                    }else if(todraw.variantRegions == null){
-                        if(todraw instanceof mindustry.world.blocks.environment.StaticWall){
-                            TextureRegion region = todraw.region;
-                            if(region != null && region.found()){
-                                Draw.rect(normRegions[todraw.id][0], tile.worldx(), tile.worldy(), region.width * Draw.scl, region.height * Draw.scl, 0f);
-                            }else{
-                                Draw.rect(normRegions[todraw.id][0], tile.worldx(), tile.worldy(), bs, bs, 0f);
-                            }
-                        }else{
-                            Draw.rect(normRegions[todraw.id][0], tile.worldx(), tile.worldy(), bs, bs, 0f);
-                        }
+                    if(todraw.variantRegions == null){
+                        Draw.rect(normRegions[todraw.id][0], tile.worldx(), tile.worldy(), bs, bs, 0f);
                     }else{
-                        int idx = 1 + Mathf.randomSeed(tile.pos(), 0, Math.max(0, todraw.variantRegions.length - 1));
-                        if(todraw instanceof mindustry.world.blocks.environment.StaticWall){
-                            TextureRegion region = todraw.variantRegions[idx - 1];
-                            if(region != null && region.found()){
-                                Draw.rect(normRegions[todraw.id][idx], tile.worldx(), tile.worldy(), region.width * Draw.scl, region.height * Draw.scl, 0f);
-                            }else{
-                                Draw.rect(normRegions[todraw.id][idx], tile.worldx(), tile.worldy(), bs, bs, 0f);
-                            }
-                        }else{
-                            Draw.rect(normRegions[todraw.id][idx], tile.worldx(), tile.worldy(), bs, bs, 0f);
-                        }
+                        Draw.rect(normRegions[todraw.id][1 + Mathf.randomSeed(tile.pos(), 0, Math.max(0, todraw.variantRegions.length - 1))], tile.worldx(), tile.worldy(), bs, bs, 0f);
                     }
-                }else if(todraw.cacheLayer == CacheLayer.walls || isProp || todraw instanceof mindustry.world.blocks.environment.StaticWall){
+                }else if(todraw.cacheLayer == CacheLayer.walls){
                     Draw.mixcol(Color.white, 1f);
-                    
-                    if(isProp){
-                        TextureRegion region = todraw.region;
-                        if(todraw.variantRegions != null && todraw.variantRegions.length > 0){
-                            int index = Mathf.randomSeed(tile.pos(), 0, todraw.variantRegions.length - 1);
-                            if(index >= 0 && index < todraw.variantRegions.length && todraw.variantRegions[index] != null && todraw.variantRegions[index].found()){
-                                region = todraw.variantRegions[index];
-                            }
-                        }
-                        if(region != null && region.found()){
-                            float propW = region.width * Draw.scl;
-                            float propH = region.height * Draw.scl;
-                            Draw.rect(region, tile.worldx(), tile.worldy(), propW, propH, 0f);
-                        }else{
-                            Draw.rect(todraw.fullIcon, tile.worldx(), tile.worldy(), bs, bs, 0f);
-                        }
-                    }else{
-                        if(todraw instanceof mindustry.world.blocks.environment.StaticWall){
-                            TextureRegion region = todraw.region;
-                            if(todraw.variantRegions != null && todraw.variantRegions.length > 0){
-                                int index = Mathf.randomSeed(tile.pos(), 0, Math.max(0, todraw.variantRegions.length - 1));
-                                if(index >= 0 && index < todraw.variantRegions.length && todraw.variantRegions[index] != null && todraw.variantRegions[index].found()){
-                                    region = todraw.variantRegions[index];
-                                }
-                            }
-                            if(region != null && region.found()){
-                                Draw.rect(region, tile.worldx(), tile.worldy(), region.width * Draw.scl, region.height * Draw.scl, 0f);
-                            }else{
-                                Draw.rect(todraw.fullIcon, tile.worldx(), tile.worldy(), bs, bs, 0f);
-                            }
-                        }else{
-                            Draw.rect(todraw.fullIcon, tile.worldx(), tile.worldy(), bs, bs, 0f);
-                        }
-                    }
+                    Draw.rect(todraw.fullIcon, tile.worldx(), tile.worldy(), bs, bs, 0f);
                 }
             }
-        }
-        
-        if(depthTex && propDepthBuffer != null){
-            Draw.rect(String.valueOf(propDepthBuffer.getTexture()), Core.graphics.getWidth() / 2f, Core.graphics.getHeight() / 2f, Core.graphics.getWidth(), Core.graphics.getHeight());
         }
     }
 
     public static void applyShader(){
         if(!shadow || debug || SSShaders.shadow == null) return;
+        //the layer of block shadow;
         Draw.drawRange(getLayer(), 0.1f, () -> renderer.effectBuffer.begin(Color.clear), () -> {
             renderer.effectBuffer.end();
             renderer.effectBuffer.blit(SSShaders.shadow);
@@ -527,6 +339,7 @@ public class Shadow{
                         + Mathf.floor(values[3]) * 50000f);
     }
 
+    //a hook to get circles before they are recycled by lightRenderer
     public static class IndexGetterDrawc implements Drawc{
         public transient boolean added = false;
 

@@ -1,5 +1,5 @@
 #define HIGHP
-#define LIGHTH 1.0
+#define LIGHTH 4.0
 #define MAX_LIGHTS 400
 uniform float u_EDGE_PRECISION;
 uniform sampler2D u_texture;
@@ -7,7 +7,6 @@ uniform vec2 u_texsize;
 uniform vec2 u_invsize;
 uniform vec2 u_offset;
 uniform float u_ambientLight;
-uniform vec3 u_ambientColor;
 uniform int u_lightcount;
 uniform vec2 u_lights[MAX_LIGHTS];
 
@@ -69,9 +68,6 @@ void main(){
         }
     }
 
-    float shadowAlpha = clamp(shadowness * (1.0 - lightness) * sqrt(u_ambientLight * 0.75 + 0.25), 0.0, 0.9);
-    // 使用环境光颜色影响阴影颜色，创造更真实的视觉效果
-    vec3 shadowColor = mix(vec3(0.0, 0.0, 0.0), u_ambientColor * 0.5, u_ambientLight);
-    vec4 result = vec4(shadowColor, shadowAlpha);
+    vec4 result = vec4(0.0, 0.0, 0.0, clamp(shadowness * (1.0 - lightness) * sqrt(u_ambientLight * 0.75 + 0.25), 0.0, 0.9));
     gl_FragColor = result;
 }

@@ -11,10 +11,6 @@ public class Generators{
     public static Seq<ImgPattern> patterns = new Seq<>();
     //axis of symmetry : y=-x+size/2
     public static boolean check(Pixmap img, Pixmap out){
-        return check(img, out, 1.0f);
-    }
-
-    public static boolean check(Pixmap img, Pixmap out, float heightScale){
         int priority = 0;
         ImgPattern target = null;
         for(var patt : patterns){
@@ -23,7 +19,7 @@ public class Generators{
             priority = patt.priority;
             if(patt.check(img)) target = patt;
         }
-        if(target != null) target.generate(img, out, heightScale);
+        if(target != null) target.generate(img, out);
         return target != null;
     }
 
@@ -38,17 +34,11 @@ public class Generators{
             }
 
             @Override
-            public void generate(Pixmap img, Pixmap out, float heightScale){
+            public void generate(Pixmap img, Pixmap out){
                 for(int x = 0; x < img.width; x++){
                     for(int y = 0; y < img.height; y++){
-                        var c = Tmp.c1.set(img.get(x, y));
-                        float alpha = c.a;
-                        if(alpha > 0.05f){
-                            float depth = Math.max(c.value(), 0.2f) * heightScale;
-                            out.set(x, y, oc.set(0f, 0f, depth, alpha));
-                        }else{
-                            out.set(x, y, Color.clear);
-                        }
+                        //明度高，高度高
+                        out.set(x, y, oc.set(0f, 0f, Tmp.c1.set(img.get(x, y)).value(), Tmp.c1.set(img.get(x, y)).a));
                     }
                 }
             }
@@ -75,13 +65,13 @@ public class Generators{
             }
 
             @Override
-            public void generate(Pixmap img, Pixmap out, float heightScale){
+            public void generate(Pixmap img, Pixmap out){
                 out.fill(Color.clear);
                 for(int l = 0; l < img.width; l++){
                     for(int n = 0 ; n < l; n++){
                         int x = (img.width - 1) - (l - n);
                         int y = n;
-                        out.set(x, y, oc.set(0f, 0f, Tmp.c1.set(img.get(x, y)).value() * heightScale, Tmp.c1.set(img.get(x, y)).a));
+                        out.set(x, y, oc.set(0f, 0f, Tmp.c1.set(img.get(x, y)).value(), Tmp.c1.set(img.get(x, y)).a));
                     }
                 }
 
@@ -114,10 +104,6 @@ public class Generators{
         }
 
         public void generate(Pixmap img, Pixmap out){
-            generate(img, out, 1.0f);
-        }
-
-        public void generate(Pixmap img, Pixmap out, float heightScale){
         }
     }
 }
