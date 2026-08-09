@@ -34,6 +34,7 @@ public class ShadowMain {
         ShadowRenderer.graphicsQuality    = Core.settings.getInt ("graphics_quality",            2);
         ShadowRenderer.enabled            = Core.settings.getBool("shadows_enabled",     true);
         ShadowRenderer.dayNightCycle      = Core.settings.getBool("day_night_cycle",             true);
+        ShadowRenderer.rotateShadows      = !Core.settings.getBool("static_shadows",            false);
         ShadowRenderer.unitShadowsEnabled = Core.settings.getBool("unit_shadows",        true);
         int pScaleVal = Core.settings.getInt("prop_shadow_scale", 100);
         ShadowRenderer.propShadowScale    = pScaleVal / 100f;
@@ -46,55 +47,5 @@ public class ShadowMain {
         ShadowRenderer.darkFadeStrength   = Core.settings.getInt ("dark_fade_percent",            80) / 100f;
 
         ShadowRenderer.updateUnitShadows();
-    }
-
-    public static void addSettings(mindustry.ui.dialogs.SettingsMenuDialog.SettingsTable st) {
-        st.checkPref("shadows_enabled", false, val -> {
-            ShadowRenderer.enabled = val;
-            ShadowRenderer.updateUnitShadows();
-        });
-        st.checkPref("day_night_cycle", true, val -> ShadowRenderer.dayNightCycle = val);
-        st.checkPref("unit_shadows", true, val -> {
-            ShadowRenderer.unitShadowsEnabled = val;
-            ShadowRenderer.updateUnitShadows();
-        });
-
-        st.sliderPref("graphics_quality", 2, 0, 2, 1, s -> {
-            ShadowRenderer.graphicsQuality = s;
-            return s == 0 ? "Low" : s == 1 ? "Medium" : "High";
-        });
-        st.sliderPref("shadow_length", 10, 0, 30, 1, s -> {
-            ShadowRenderer.SHADOW_LENGTH = s;
-            return s + " tiles";
-        });
-        st.sliderPref("prop_shadow_scale", 100, 0, 200, 10, s -> {
-            ShadowRenderer.propShadowScale = s / 100f;
-            boolean oldVal = ShadowRenderer.oldShadowsEnabled;
-            ShadowRenderer.oldShadowsEnabled = (s == 0);
-            if (oldVal != ShadowRenderer.oldShadowsEnabled) {
-                ShadowRenderer.ChunkCache.invalidateAll();
-            }
-            return s == 0 ? "Mindustry (Old)" : s + "%";
-        });
-        st.sliderPref("shadow_opacity_percent", 45, 0, 100, 1, s -> {
-            ShadowRenderer.SHADOW_ALPHA = s / 100f;
-            return s + "%";
-        });
-        st.sliderPref("blur_radius", 35, 10, 80, 5, s -> {
-            ShadowRenderer.blurRadius = s / 10f;
-            return (s / 10f) + " px";
-        });
-        st.sliderPref("shadow_tint_percent", 60, 0, 100, 5, s -> {
-            ShadowRenderer.shadowTint = s / 100f;
-            return s + "%";
-        });
-        st.sliderPref("contact_shadow_percent", 45, 0, 100, 5, s -> {
-            ShadowRenderer.contactShadow = s / 100f;
-            return s + "%";
-        });
-        st.sliderPref("dark_fade_percent", 80, 0, 100, 5, s -> {
-            ShadowRenderer.darkFadeStrength = s / 100f;
-            return s + "%";
-        });
     }
 }
