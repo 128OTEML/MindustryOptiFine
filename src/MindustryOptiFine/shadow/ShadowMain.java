@@ -5,14 +5,10 @@ import arc.Events;
 import mindustry.game.EventType;
 
 public class ShadowMain {
-    /** 保险机制计数器：建造/拆除事件可能丢失，每 SAFETY_INTERVAL 帧强制刷新一次 chunk 缓存 */
-    private static final int SAFETY_INTERVAL = 20;
-    private static int safetyFrames = 0;
 
     public static void initEvents() {
         Events.on(EventType.WorldLoadEvent.class, e -> {
             ShadowRenderer.ChunkCache.init();
-            safetyFrames = 0;
         });
         Events.on(EventType.BlockBuildEndEvent.class, e -> {
             if (e.tile != null) {
@@ -39,12 +35,6 @@ public class ShadowMain {
         Events.on(EventType.PayloadDropEvent.class, e -> ShadowRenderer.shadDirty = true);
 
         Events.run(EventType.Trigger.draw, () -> ShadowRenderer.weatherMult = 1f);
-        Events.run(EventType.Trigger.draw, () -> {
-            if (ShadowRenderer.enabled && ++safetyFrames >= SAFETY_INTERVAL) {
-                safetyFrames = 0;
-                ShadowRenderer.ChunkCache.invalidateAll();
-            }
-        });
         Events.run(EventType.Trigger.draw, ShadowRenderer::queue);
     }
 

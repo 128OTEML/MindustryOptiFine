@@ -289,10 +289,6 @@ public class ShadowRenderer {
                             float bx2 = Math.max(e.cx + whs, e.cx + whs + cosA * shadowScale);
                             float by2 = Math.max(e.cy + whs, e.cy + whs + sinA * shadowScale);
                             if (bx2 < screenX1 || bx1 > screenX2 || by2 < screenY1 || by1 > screenY2) continue;
-                            // 方向性山体剔除：仅对真正的山体/墙体 caster 生效（不误伤 Tier4 的大型建筑）
-                            if (tier == ShadowLayerConfig.TIER_ENV && !e.isProp
-                                    && ShadowLayerConfig.isMountainOrWall(e.block)
-                                    && !isExposedMountainCaster(e.x, e.y, cosA, sinA, shadowScale)) continue;
 
                             if (e.isProp) {
                                 float propH = e.region.height * Draw.scl;
@@ -525,32 +521,9 @@ public class ShadowRenderer {
         return isSolidAt(x+1, y) && isSolidAt(x-1, y) && isSolidAt(x, y+1) && isSolidAt(x, y-1);
     }
 
-    private static boolean isMountainTile(int x, int y) {
-        Tile t = Vars.world.tile(x, y);
-        if (t == null || t.build != null) return false;
-        return t.block().solid && ShadowLayerConfig.isMountainOrWall(t.block());
-    }
-
     private static boolean isBuriedMountain(int x, int y) {
-        return isMountainTile(x+1, y)   && isMountainTile(x-1, y)   && isMountainTile(x, y+1)   && isMountainTile(x, y-1)
-            && isMountainTile(x+1, y+1) && isMountainTile(x-1, y+1) && isMountainTile(x+1, y-1) && isMountainTile(x-1, y-1);
-    }
-
-    /**
-     * 方向性山体剔除：沿阴影方向检查若干格。仅当阴影路径全程落在山体/墙体上
-     * （即阴影不可见，被相邻山体完全遮挡）时返回 false（剔除）。
-     * 相比外部实现（只查固定 2 格），按阴影长度逐格检查，避免山脊较薄时
-     * 长阴影越过山脊后落在空地上的部分被误删。
-     */
-    private static boolean isExposedMountainCaster(int x, int y, float cosA, float sinA, float shadowScale) {
-        int dx = Math.round(cosA);
-        int dy = Math.round(sinA);
-        if (dx == 0 && dy == 0) return true; // 方向无法量化时保守保留
-        int steps = Math.max(1, Math.min((int) Math.ceil(shadowScale / Vars.tilesize), 8));
-        for (int i = 1; i <= steps; i++) {
-            if (!isMountainTile(x + dx * i, y + dy * i)) return true;
-        }
-        return false;
+        return isSolidAt(x+1, y)   && isSolidAt(x-1, y)   && isSolidAt(x, y+1)   && isSolidAt(x, y-1)
+            && isSolidAt(x+1, y+1) && isSolidAt(x-1, y+1) && isSolidAt(x+1, y-1) && isSolidAt(x-1, y-1);
     }
 
     private static boolean isBuildingBuried(mindustry.gen.Building build) {
