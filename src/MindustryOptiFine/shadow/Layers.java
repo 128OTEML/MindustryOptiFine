@@ -8,16 +8,16 @@ public class Layers {
     /** Tier 0: Sombras del terreno y bloques base 1x1 */
     public static final float shadowGround = 29.0f;
     
-    /** Tier 1: bloques 2x2 Z=70f */
+    /** Tier 1: bloques 2x2 */
     public static final float shadowTier1 = 29.1f;
     
-    /** Tier 2: Sombras de bloques 3x3 Z=70f) */
+    /** Tier 2: Sombras de bloques 3x3 */
     public static final float shadowTier2 = 29.2f;
     
-    /** Tier 3: Sombras de bloques 4x4 y 5x5 Z=70f) */
+    /** Tier 3: Sombras de bloques 4x4 y 5x5 */
     public static final float shadowTier3 = 29.3f;
     
-    /** Tier 4: Sombras de bloques 6x6+ y montañas Z=72f) */
+    /** Tier 4: Sombras de bloques 6x6+ y montañas */
     public static final float shadowMountain = 72.0f;
     
     public static float getZ(int tierIndex) {

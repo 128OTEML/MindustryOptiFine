@@ -17,8 +17,26 @@ public class ShadowMain {
         Events.on(EventType.BlockBuildEndEvent.class, e -> {
             if (e.tile != null) {
                 ShadowRenderer.ChunkCache.invalidateTile(e.tile.x, e.tile.y);
+            } else {
+                ShadowRenderer.shadDirty = true;
             }
         });
+        Events.on(EventType.BlockDestroyEvent.class, e -> {
+            if (e.tile != null) {
+                ShadowRenderer.ChunkCache.invalidateTile(e.tile.x, e.tile.y);
+            } else {
+                ShadowRenderer.shadDirty = true;
+            }
+        });
+        Events.on(EventType.TileChangeEvent.class, e -> {
+            if (e.tile != null) {
+                ShadowRenderer.ChunkCache.invalidateTile(e.tile.x, e.tile.y);
+            } else {
+                ShadowRenderer.shadDirty = true;
+            }
+        });
+        Events.on(EventType.PickupEvent.class, e -> ShadowRenderer.shadDirty = true);
+        Events.on(EventType.PayloadDropEvent.class, e -> ShadowRenderer.shadDirty = true);
 
         Events.run(EventType.Trigger.draw, () -> ShadowRenderer.weatherMult = 1f);
         Events.run(EventType.Trigger.draw, () -> {

@@ -62,6 +62,13 @@ public class ShadowRenderer {
     public static float currentSunElevation = 0f, currentCycleProgress = 0f;
     private static final ObjectFloatMap<Integer> bridgeWarmupMap = new ObjectFloatMap<>();
     private static final ObjectMap<Integer, float[]> bridgePosMap = new ObjectMap<>();
+    private static final ObjectMap<Block, Boolean> floorEraseCache = new ObjectMap<>(64);
+
+    public static volatile boolean shadDirty = true;
+    private static float lastCachedAngle = -999f;
+    private static float lastCachedCamX = 0f;
+    private static float lastCachedCamY = 0f;
+    private static float lastCachedCamW = 0f;
 
     public static void queue() {
         if (!enabled || Vars.headless || !Vars.state.isGame()) return;
@@ -169,7 +176,8 @@ public class ShadowRenderer {
                 int lx = arc.math.geom.Point2.x(linkPos);
                 int ly = arc.math.geom.Point2.y(linkPos);
                 mindustry.world.Tile tgt = Vars.world.tile(lx, ly);
-                if (tgt != null && tgt.build != null) {
+                if (tgt != null && tgt.build != null
+                        && Mathf.dst(b.x, b.y, tgt.build.x, tgt.build.y) <= 96f) {
                     activeBridgeIds.add(b.id);
                     float curWarmup = bridgeWarmupMap.get(b.id, 0f);
                     curWarmup = Mathf.approachDelta(curWarmup, 1f, 0.08f);
@@ -190,7 +198,8 @@ public class ShadowRenderer {
             if (!activeBridgeIds.contains(bid)) {
                 float curWarmup = bridgeWarmupMap.get(bid, 0f);
                 curWarmup = Mathf.approachDelta(curWarmup, 0f, 0.08f);
-                if (curWarmup > 0.001f) {
+                if (curWarmup > 0.001f && entry.value != null
+                        && Mathf.dst(entry.value[0], entry.value[1], entry.value[2], entry.value[3]) <= 96f) {
                     bridgeWarmupMap.put(bid, curWarmup);
                     float[] pos = entry.value;
                     float animTx = Mathf.lerp(pos[0], pos[2], curWarmup);
@@ -233,6 +242,19 @@ public class ShadowRenderer {
             });
         }
 
+        // Solo re-renderizar los FBO cuando cambia algo relevante (caché de frames)
+        boolean needsRedraw = shadDirty || !bridgeLinks.isEmpty()
+                || Math.abs(angle - lastCachedAngle) > 0.5f
+                || Math.abs(camX - lastCachedCamX) > 0.05f
+                || Math.abs(camY - lastCachedCamY) > 0.05f
+                || Math.abs(camW - lastCachedCamW) > 0.05f;
+        if (needsRedraw) {
+            shadDirty = false;
+            lastCachedAngle = angle;
+            lastCachedCamX = camX;
+            lastCachedCamY = camY;
+            lastCachedCamW = camW;
+        }
 
         // 5-Tier Shadow Pipeline
         for (int t = 0; t < ShadowLayerConfig.NUM_TIERS; t++) {
@@ -240,6 +262,7 @@ public class ShadowRenderer {
             final float drawZ = Layers.getZ(tier);
 
             Draw.draw(drawZ, () -> {
+                if (needsRedraw) {
                 tierFbo[tier].begin();
                 Gl.clearColor(0f, 0f, 0f, 0f);
                 Gl.clear(GL20.GL_COLOR_BUFFER_BIT);
@@ -251,11 +274,8 @@ public class ShadowRenderer {
                         if (cx < 0 || cx >= ChunkCache.mapW || cy < 0 || cy >= ChunkCache.mapH) continue;
                         ChunkCache.CasterChunk chunk = ChunkCache.chunks[cx][cy];
                         if (!chunk.valid) {
-                            ChunkCache.requestRebuildAsync(cx, cy);
-                            if (chunk.tierCasters[0] == null) {
-                                ChunkCache.rebuildChunkSync(cx, cy);
-                                chunk = ChunkCache.chunks[cx][cy];
-                            }
+                            ChunkCache.rebuildChunkSync(cx, cy);
+                            chunk = ChunkCache.chunks[cx][cy];
                         }
 
                         Seq<ChunkCache.CasterEntry> list = chunk.tierCasters[tier];
@@ -269,6 +289,10 @@ public class ShadowRenderer {
                             float bx2 = Math.max(e.cx + whs, e.cx + whs + cosA * shadowScale);
                             float by2 = Math.max(e.cy + whs, e.cy + whs + sinA * shadowScale);
                             if (bx2 < screenX1 || bx1 > screenX2 || by2 < screenY1 || by1 > screenY2) continue;
+                            // 方向性山体剔除：仅对真正的山体/墙体 caster 生效（不误伤 Tier4 的大型建筑）
+                            if (tier == ShadowLayerConfig.TIER_ENV && !e.isProp
+                                    && ShadowLayerConfig.isMountainOrWall(e.block)
+                                    && !isExposedMountainCaster(e.x, e.y, cosA, sinA, shadowScale)) continue;
 
                             if (e.isProp) {
                                 float propH = e.region.height * Draw.scl;
@@ -295,18 +319,8 @@ public class ShadowRenderer {
                     }
                 }
 
-                // Dibujar sombras de unidades pre-recolectadas
-                if (!unitShadows.isEmpty()) {
-                    for (UnitShadowData ud : unitShadows) {
-                        if (ud.tier != tier) continue;
-                        Draw.color(0.04f, 0.03f, 0.08f, ud.alpha);
-                        Draw.rect(ud.region, ud.x, ud.y, ud.w, ud.h, ud.rotation - 90);
-                    }
-                }
-
-                // Sombras de enlaces de puente dibujadas en Tier 0 (Z=29.0f) para recibir desenfoque completo
-                // y renderizarse por debajo de la viga del puente (Z=70f)
-                if (tier == ShadowLayerConfig.TIER_SMALL && !bridgeLinks.isEmpty()) {
+                // Sombras de enlaces de puente dibujadas en Tier 3 (Z=50.3f)
+                if (tier == ShadowLayerConfig.TIER_XL && !bridgeLinks.isEmpty()) {
                     float bridgeFLen = shadowScale * 0.025f;
                     for (float[] lk : bridgeLinks) {
                         drawBridgeLinkShadow(lk[0], lk[1], lk[2], lk[3], bridgeFLen, cosA, sinA, lk[4]);
@@ -320,7 +334,7 @@ public class ShadowRenderer {
 
                 // Enmascaramiento para Tier 4 (Montañas): borrar casillas de paredes rocosas para evitar autosombra
                 if (tier == ShadowLayerConfig.TIER_ENV) {
-                    eraseWallTiles(tx1, ty1, tx2, ty2, ts);
+                    eraseWallTiles(chX1, chY1, chX2, chY2);
                 }
 
                 // Borrar casillas de suelo luminoso, líquido o espacio
@@ -350,17 +364,28 @@ public class ShadowRenderer {
                 Draw.color(0f, 0f, 0f, 0f);
                 eraseTierFootprints(chX1, chY1, chX2, chY2, tier, screenX1, screenY1, screenX2, screenY2);
                 if (tier == ShadowLayerConfig.TIER_ENV) {
-                    eraseWallTiles(tx1, ty1, tx2, ty2, ts);
+                    eraseWallTiles(chX1, chY1, chX2, chY2);
                 }
                 Draw.flush();
                 Draw.blend(arc.graphics.Blending.normal);
 
                 tierFbo3[tier].end();
+                } // fin caché needsRedraw
 
                 // Dibujar textura final desenfocada de sombra para este Tier
                 if (enabled && tierReg3[tier] != null && tierReg3[tier].texture != null) {
                     Draw.color(Color.white, alpha);
                     Draw.rect(tierReg3[tier], camX, camY, camW, camH);
+                    Draw.color();
+                }
+
+                // Sombras de unidades dibujadas sobre la textura ya desenfocada (no participan del blur)
+                if (!unitShadows.isEmpty()) {
+                    for (UnitShadowData ud : unitShadows) {
+                        if (ud.tier != tier) continue;
+                        Draw.color(0.04f, 0.03f, 0.08f, ud.alpha * alpha);
+                        Draw.rect(ud.region, ud.x, ud.y, ud.w, ud.h, ud.rotation - 90);
+                    }
                     Draw.color();
                 }
             });
@@ -375,17 +400,21 @@ public class ShadowRenderer {
                 if (cx < 0 || cx >= ChunkCache.mapW || cy < 0 || cy >= ChunkCache.mapH) continue;
                 ChunkCache.CasterChunk chunk = ChunkCache.chunks[cx][cy];
                 if (!chunk.valid) continue;
-                for (int t = tier; t < ShadowLayerConfig.NUM_TIERS; t++) {
+                int t = tier == ShadowLayerConfig.TIER_XL ? ShadowLayerConfig.TIER_SMALL : tier;
+                while (t < ShadowLayerConfig.NUM_TIERS) {
                     Seq<ChunkCache.CasterEntry> list = chunk.tierCasters[t];
                     for (int i = 0; i < list.size; i++) {
                         ChunkCache.CasterEntry e = list.get(i);
+                        // En tiers inferiores solo se borran huellas de puentes (sus sombras viven en Tier 3)
                         if (e.mod == 0f || e.isProp) continue;
+                        if (t < tier && !ShadowLayerConfig.isBridge(e.block)) continue;
                         float whs = e.size * 0.5f + 1f;
                         if (e.cx + whs < sX1 || e.cx - whs > sX2 || e.cy + whs < sY1 || e.cy - whs > sY2) continue;
                         // Borrar la huella del bloque: ligeramente menor a rawSize para evitar cortar la sombra del vecino
                         float eraseSize = Math.max(0.1f, e.rawSize - 0.2f);
                         Fill.rect(e.cx, e.cy, eraseSize, eraseSize);
                     }
+                    t++;
                 }
             }
         }
@@ -413,13 +442,18 @@ public class ShadowRenderer {
             x2 + nx, y2 + ny
         );
     }
-    private static void eraseWallTiles(int tx1, int ty1, int tx2, int ty2, float ts) {
-        for (int ex = tx1; ex <= tx2; ex++) {
-            for (int ey = ty1; ey <= ty2; ey++) {
-                Tile t = Vars.world.tile(ex, ey);
-                if (t != null && t.build == null && t.block().solid && ShadowLayerConfig.isMountainOrWall(t.block())) {
+    private static void eraseWallTiles(int chX1, int chY1, int chX2, int chY2) {
+        for (int cx = chX1; cx <= chX2; cx++) {
+            for (int cy = chY1; cy <= chY2; cy++) {
+                if (cx < 0 || cx >= ChunkCache.mapW || cy < 0 || cy >= ChunkCache.mapH) continue;
+                ChunkCache.CasterChunk chunk = ChunkCache.chunks[cx][cy];
+                if (!chunk.valid) continue;
+                Seq<ChunkCache.CasterEntry> list = chunk.tierCasters[ShadowLayerConfig.TIER_ENV];
+                for (int i = 0; i < list.size; i++) {
+                    ChunkCache.CasterEntry e = list.get(i);
+                    if (e.mod == 0f || e.isProp) continue;
                     // Borrar huella exacta de baldosa de montaña para evitar huecos entre casillas adyacentes
-                    Fill.rect(ex * ts, ey * ts, ts, ts);
+                    Fill.rect(e.cx, e.cy, e.rawSize, e.rawSize);
                 }
             }
         }
@@ -491,9 +525,32 @@ public class ShadowRenderer {
         return isSolidAt(x+1, y) && isSolidAt(x-1, y) && isSolidAt(x, y+1) && isSolidAt(x, y-1);
     }
 
+    private static boolean isMountainTile(int x, int y) {
+        Tile t = Vars.world.tile(x, y);
+        if (t == null || t.build != null) return false;
+        return t.block().solid && ShadowLayerConfig.isMountainOrWall(t.block());
+    }
+
     private static boolean isBuriedMountain(int x, int y) {
-        return isSolidAt(x+1, y)   && isSolidAt(x-1, y)   && isSolidAt(x, y+1)   && isSolidAt(x, y-1)
-            && isSolidAt(x+1, y+1) && isSolidAt(x-1, y+1) && isSolidAt(x+1, y-1) && isSolidAt(x-1, y-1);
+        return isMountainTile(x+1, y)   && isMountainTile(x-1, y)   && isMountainTile(x, y+1)   && isMountainTile(x, y-1)
+            && isMountainTile(x+1, y+1) && isMountainTile(x-1, y+1) && isMountainTile(x+1, y-1) && isMountainTile(x-1, y-1);
+    }
+
+    /**
+     * 方向性山体剔除：沿阴影方向检查若干格。仅当阴影路径全程落在山体/墙体上
+     * （即阴影不可见，被相邻山体完全遮挡）时返回 false（剔除）。
+     * 相比外部实现（只查固定 2 格），按阴影长度逐格检查，避免山脊较薄时
+     * 长阴影越过山脊后落在空地上的部分被误删。
+     */
+    private static boolean isExposedMountainCaster(int x, int y, float cosA, float sinA, float shadowScale) {
+        int dx = Math.round(cosA);
+        int dy = Math.round(sinA);
+        if (dx == 0 && dy == 0) return true; // 方向无法量化时保守保留
+        int steps = Math.max(1, Math.min((int) Math.ceil(shadowScale / Vars.tilesize), 8));
+        for (int i = 1; i <= steps; i++) {
+            if (!isMountainTile(x + dx * i, y + dy * i)) return true;
+        }
+        return false;
     }
 
     private static boolean isBuildingBuried(mindustry.gen.Building build) {
@@ -538,11 +595,28 @@ public class ShadowRenderer {
         if (t.build != null && t.block().solid) return false;
         Floor fl = t.floor();
         if (fl == null) return false;
-        String n = fl.name.toLowerCase();
-        if (fl == mindustry.content.Blocks.space || fl == mindustry.content.Blocks.empty
-                || n.contains("space") || n.contains("void")
-                || n.contains("empty") || n.contains("dark-panel")) return true;
-        return n.contains("slag") || n.contains("lava") || n.contains("magma") || n.contains("hot") || n.contains("cryo");
+        Boolean cached = floorEraseCache.get(fl);
+        if (cached != null) return cached;
+        if (fl == mindustry.content.Blocks.space || fl == mindustry.content.Blocks.empty) {
+            floorEraseCache.put(fl, true);
+            return true;
+        }
+        String n = fl.name != null ? fl.name.toLowerCase() : "";
+        boolean isMetal6 = n.contains("metal-floor-6") || n.contains("metal-tile-6")
+                || n.contains("metal6") || (n.endsWith("-6") && n.contains("metal"));
+        boolean isMetal12 = n.contains("metal-floor-12") || n.contains("metal-tile-12")
+                || n.contains("metal12") || (n.endsWith("-12") && n.contains("metal"));
+        boolean isCruxRune = n.contains("crux") || n.contains("rune");
+        if (isMetal6 || isMetal12 || isCruxRune) {
+            floorEraseCache.put(fl, true);
+            return true;
+        }
+        boolean res = n.contains("space") || n.contains("void") || n.contains("empty")
+                || n.contains("dark-panel")
+                || n.contains("slag") || n.contains("lava") || n.contains("magma")
+                || n.contains("hot") || n.contains("cryo");
+        floorEraseCache.put(fl, res);
+        return res;
     }
 
     private static class UnitShadowData {
@@ -611,6 +685,7 @@ public class ShadowRenderer {
             bridgeWarmupMap.clear();
             bridgePosMap.clear();
             pendingChunks.clear();
+            shadDirty = true;
             if (!initialized || chunks == null) return;
             for (int x = 0; x < mapW; x++) {
                 for (int y = 0; y < mapH; y++) {
@@ -624,7 +699,8 @@ public class ShadowRenderer {
             int cx = x / CHUNK_SIZE;
             int cy = y / CHUNK_SIZE;
             if (cx >= 0 && cx < mapW && cy >= 0 && cy < mapH) {
-                chunks[cx][cy].valid = false;
+                rebuildChunkSync(cx, cy);
+                shadDirty = true;
             }
         }
 
@@ -718,6 +794,7 @@ public class ShadowRenderer {
             newChunk.valid = true;
             if (cx >= 0 && cx < mapW && cy >= 0 && cy < mapH) {
                 chunks[cx][cy] = newChunk;
+                shadDirty = true;
             }
         }
     }
