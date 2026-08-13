@@ -7,12 +7,15 @@ import arc.graphics.*;
 import arc.graphics.g2d.*;
 import arc.graphics.g2d.TextureAtlas.*;
 import arc.scene.ui.layout.Table;
+import arc.scene.ui.*;
+import arc.scene.ui.layout.*;
 import arc.graphics.gl.*;
 import arc.math.*;
 import arc.math.geom.*;
 import arc.struct.*;
 import arc.util.*;
 import arc.input.KeyCode;
+import MindustryOptiFine.io.MofsReader;
 import MindustryOptiFine.graphics.*;
 import MindustryOptiFine.graphics.StaticBlockRenderer.*;
 import MindustryOptiFine.graphics.particles.ParticleManager;
@@ -40,6 +43,7 @@ import mindustry.ctype.*;
 import mindustry.mod.*;
 import mindustry.type.*;
 import mindustry.ui.dialogs.*;
+import mindustry.ui.*;
 import mindustry.type.weapons.*;
 import mindustry.world.*;
 import mindustry.world.blocks.defense.*;
@@ -78,11 +82,13 @@ public class MindustryOptiFine extends Mod{
     static Rect view = new Rect();
 
     static int bloomQuality = 4;
+    static int bloomCreatedQuality = -1;
     static boolean hideVanillaLights = false, renderEnvironment = true;
     static boolean test = false;
     static StaticBlockRenderer staticRenderer;
 
     public static boolean autoQualityEnabled = true;
+    public static Fi modRoot;
     public static float currentZoom = 1f;
     public static float targetQualityScale = 1f;
     public static float currentQualityScale = 1f;
@@ -340,112 +346,141 @@ public class MindustryOptiFine extends Mod{
     public void init() {
         super.init();
 
+        for(var mod : Vars.mods.list()){
+            if(mod.main == this){
+                modRoot = mod.root;
+                break;
+            }
+        }
+
         Vars.ui.settings.addCategory("@mindustry-optifine", "mindustry-optifine-setting-icon", st -> {
-            st.checkPref("al-bloom-enabled", false, this::setBloom);
-            st.checkPref("al-environment-enabled", renderEnvironment);
+            SettingsMenuDialog.SettingsTable settings = new SettingsMenuDialog.SettingsTable();
+            MCollapser collapser = new MCollapser(settings, true);
 
+            SettingsMenuDialog.SettingsTable presetSettings = new SettingsMenuDialog.SettingsTable();
+            MCollapser presetCollapser = new MCollapser(presetSettings, true);
+
+            st.table(t -> {
+                t.button("@mindustry-optifine.custom-shading", Icon.settings, () -> {
+                    presetCollapser.setCollapsed(true);
+                    collapser.toggle();
+                }).growX().padTop(7f).padRight(4f).margin(10f);
+                t.button("@mindustry-optifine.presets", Icon.book, () -> {
+                    collapser.setCollapsed(true);
+                    buildPresetList(presetSettings);
+                    presetCollapser.toggle();
+                }).growX().padTop(7f).padLeft(4f).margin(10f);
+            }).growX();
             st.row();
+            st.add(collapser).growX();
+            st.row();
+            st.add(presetCollapser).growX();
 
-            st.sliderPref("al-bloom-quality", 4, 1, 6, s -> {
+            settings.checkPref("al-bloom-enabled", false, this::setBloom);
+            settings.checkPref("al-environment-enabled", renderEnvironment);
+
+            settings.row();
+
+            settings.sliderPref("al-bloom-quality", 4, 1, 6, s -> {
                 bloomQuality = s;
                 if(s > 1){
                     return "1/" + s;
                 }
                 return "1";
             });
-            st.sliderPref("al-bloom-intensity", 75, 0, 100, s -> {
+            settings.sliderPref("al-bloom-intensity", 75, 0, 100, s -> {
                 if(bloom != null){
                     bloom.intensity = s / 100f;
                 }
                 return s + "%";
             });
-            st.sliderPref("al-bloom-threshold", 0, 0, 100, s -> {
+            settings.sliderPref("al-bloom-threshold", 0, 0, 100, s -> {
                 if(bloom != null){
                     bloom.setThreshold(s / 100f);
                 }
                 return s + "%";
             });
-            st.sliderPref("al-bloom-saturation", 10, 0, 20, s -> {
+            settings.sliderPref("al-bloom-saturation", 10, 0, 20, s -> {
                 if(bloom != null){
                     bloom.setSaturation(s / 1.25f);
                 }
                 return Strings.fixed(((s / 10f) * 100f), 2) + "%";
             });
-            st.sliderPref("al-bloom-blur-amount", 2, 0, 25, s -> {
+            settings.sliderPref("al-bloom-blur-amount", 2, 0, 25, s -> {
                 if(bloom != null){
                     bloom.blurPasses = s;
                 }
                 return s + "";
             });
-            st.sliderPref("al-bloom-flare-amount", 3, 0, 25, s -> {
+            settings.sliderPref("al-bloom-flare-amount", 3, 0, 25, s -> {
                 if(bloom != null){
                     bloom.flarePasses = s;
                 }
                 return s + "";
             });
-            st.sliderPref("al-bloom-flare-length", 30, 0, 100, s -> {
+            settings.sliderPref("al-bloom-flare-length", 30, 0, 100, s -> {
                 if(bloom != null){
                     bloom.flareLength = s / 10f;
                 }
                 return (s / 10f) + "";
             });
-            st.sliderPref("al-bloom-flare-direction", 0, 0, 360 / 15, s -> {
+            settings.sliderPref("al-bloom-flare-direction", 0, 0, 360 / 15, s -> {
                 if(bloom != null){
                     bloom.flareDirection = s * 15f;
                 }
                 return (s * 15) + " " + StatUnit.degrees.localized();
             });
-            st.sliderPref("al-bloom-blur-size", 10, 0, 100, s -> {
+            settings.sliderPref("al-bloom-blur-size", 10, 0, 100, s -> {
                 if(bloom != null){
                     bloom.blurSize = s / 10f;
                 }
                 return (s / 10f) + "";
             });
-            st.sliderPref("al-bloom-blur-feedback", 100, 100, 200, s -> {
+            settings.sliderPref("al-bloom-blur-feedback", 100, 100, 200, s -> {
                 if(bloom != null){
                     bloom.setBlurFeedBack(s / 100f);
                 }
                 return (s / 100f) + "";
             });
-            st.sliderPref("al-bloom-flare-feedback", 100, 100, 200, s -> {
+            settings.sliderPref("al-bloom-flare-feedback", 100, 100, 200, s -> {
                 if(bloom != null){
                     bloom.setFlareFeedBack(s / 100f);
                 }
                 return (s / 100f) + "";
             });
-            st.sliderPref("al-bloom-diffuse-amount", 0, 0, 15, s -> {
+            settings.sliderPref("al-bloom-diffuse-amount", 0, 0, 15, s -> {
                 if(bloom != null){
                     bloom.blurDiffuseAmount = s;
                 }
                 return s + "";
             });
-            st.sliderPref("al-bloom-diffuse-size", 175, 0, 300, s -> {
+            settings.sliderPref("al-bloom-diffuse-size", 175, 0, 300, s -> {
                 if(bloom != null){
                     bloom.blurDiffuseSize = s / 100f;
                 }
                 return (s / 100f) + "";
             });
-            st.sliderPref("al-bloom-diffuse-feedback", 100, 100, 200, s -> {
+            settings.sliderPref("al-bloom-diffuse-feedback", 100, 100, 200, s -> {
                 if(bloom != null){
                     bloom.blurDiffuseFeedBack = s / 100f;
                 }
                 return (s / 100f) + "";
             });
 
-            st.row();
+            settings.row();
 
-            st.checkPref("al-hide-lights", false, b -> hideVanillaLights = b);
+            settings.checkPref("al-hide-lights", false, b -> hideVanillaLights = b);
 
-            st.row();
+            settings.row();
 
-            st.checkPref("shadow", false, b -> {
+            settings.checkPref("shadow", false, b -> {
                 Shadow.shadow = b;
                 if(b){
                     ShadowRenderer.enabled = false;
                     Core.settings.put("shadows_enabled", false);
                 }
             });
-            st.checkPref("shadows_enabled", true, b -> {
+            settings.checkPref("shadows_enabled", true, b -> {
                 ShadowRenderer.enabled = b;
                 ShadowRenderer.updateUnitShadows();
                 if(b){
@@ -453,39 +488,39 @@ public class MindustryOptiFine extends Mod{
                     Core.settings.put("shadow", false);
                 }
             });
-            st.checkPref("depthTex", false, b -> Shadow.depthTex = b);
-            st.sliderPref("precision", 8, 1, 24, 1, s -> {
+            settings.checkPref("depthTex", false, b -> Shadow.depthTex = b);
+            settings.sliderPref("precision", 8, 1, 24, 1, s -> {
                 Shadow.precision = s;
                 return s + "";
             });
-            st.checkPref("zoomPrec", false, b -> Shadow.zoomPrec = b);
-            st.sliderPref("lightLowPass", 8, 0, 64, 1, s -> {
+            settings.checkPref("zoomPrec", false, b -> Shadow.zoomPrec = b);
+            settings.sliderPref("lightLowPass", 8, 0, 64, 1, s -> {
                 Shadow.lightLowPass = s;
                 return s + "";
             });
-            st.sliderPref("maxLights", 100, 0, 400, 1, s -> {
+            settings.sliderPref("maxLights", 100, 0, 400, 1, s -> {
                 Shadow.maxLights = s;
                 return s + "";
             });
-            st.checkPref("debug", false, b -> Shadow.debug = b);
+            settings.checkPref("debug", false, b -> Shadow.debug = b);
 
-            st.row();
+            settings.row();
 
-            st.checkPref("day_night_cycle", true, val -> ShadowRenderer.dayNightCycle = val);
-            st.checkPref("unit_shadows", true, val -> {
+            settings.checkPref("day_night_cycle", true, val -> ShadowRenderer.dayNightCycle = val);
+            settings.checkPref("unit_shadows", true, val -> {
                 ShadowRenderer.unitShadowsEnabled = val;
                 ShadowRenderer.updateUnitShadows();
             });
 
-            st.sliderPref("graphics_quality", 2, 0, 2, 1, s -> {
+            settings.sliderPref("graphics_quality", 2, 0, 2, 1, s -> {
                 ShadowRenderer.graphicsQuality = s;
                 return s == 0 ? "Low" : s == 1 ? "Medium" : "High";
             });
-            st.sliderPref("shadow_length", 10, 0, 30, 1, s -> {
+            settings.sliderPref("shadow_length", 10, 0, 30, 1, s -> {
                 ShadowRenderer.SHADOW_LENGTH = s;
                 return s + " tiles";
             });
-            st.sliderPref("prop_shadow_scale", 100, 0, 200, 10, s -> {
+            settings.sliderPref("prop_shadow_scale", 100, 0, 200, 10, s -> {
                 ShadowRenderer.propShadowScale = s / 100f;
                 boolean oldVal = ShadowRenderer.oldShadowsEnabled;
                 ShadowRenderer.oldShadowsEnabled = (s == 0);
@@ -494,67 +529,133 @@ public class MindustryOptiFine extends Mod{
                 }
                 return s == 0 ? "Mindustry (Old)" : s + "%";
             });
-            st.sliderPref("shadow_opacity_percent", 45, 0, 100, 1, s -> {
+            settings.sliderPref("shadow_opacity_percent", 45, 0, 100, 1, s -> {
                 ShadowRenderer.SHADOW_ALPHA = s / 100f;
                 return s + "%";
             });
-            st.sliderPref("blur_radius", 35, 10, 80, 5, s -> {
+            settings.sliderPref("blur_radius", 35, 10, 80, 5, s -> {
                 ShadowRenderer.blurRadius = s / 10f;
                 return (s / 10f) + " px";
             });
-            st.sliderPref("shadow_tint_percent", 60, 0, 100, 5, s -> {
+            settings.sliderPref("shadow_tint_percent", 60, 0, 100, 5, s -> {
                 ShadowRenderer.shadowTint = s / 100f;
                 return s + "%";
             });
-            st.sliderPref("contact_shadow_percent", 45, 0, 100, 5, s -> {
+            settings.sliderPref("contact_shadow_percent", 45, 0, 100, 5, s -> {
                 ShadowRenderer.contactShadow = s / 100f;
                 return s + "%";
             });
-            st.sliderPref("dark_fade_percent", 80, 0, 100, 5, s -> {
+            settings.sliderPref("dark_fade_percent", 80, 0, 100, 5, s -> {
                 ShadowRenderer.darkFadeStrength = s / 100f;
                 return s + "%";
             });
 
-            st.row();
+            settings.row();
 
-            st.checkPref("connect-wall-enabled", true, b -> ConnectWallHandler.enabled = b);
+            settings.checkPref("connect-wall-enabled", true, b -> ConnectWallHandler.enabled = b);
 
-            st.row();
+            settings.row();
 
-            st.checkPref("advanced-camera", false, b -> AdvancedCamera.setEnabled(b));
-            st.sliderPref("camera-sensitivity", 100, 50, 200, 10, s -> {
+            settings.checkPref("advanced-camera", false, b -> AdvancedCamera.setEnabled(b));
+            settings.sliderPref("camera-sensitivity", 100, 50, 200, 10, s -> {
                 AdvancedCamera.sensitivity = s / 100f;
                 return (s / 100f) + "";
             });
 
-            st.row();
+            settings.row();
 
-            st.checkPref("al-auto-quality", true, b -> autoQualityEnabled = b);
+            settings.checkPref("al-auto-quality", true, b -> autoQualityEnabled = b);
 
-            st.button("Delete Depth Textures", Icon.trash, () -> {
+            settings.button("Delete Depth Textures", Icon.trash, () -> {
                 ui.showConfirm("Delete all(" + dataDirectory.child("mods").child("ShadowShader").findAll(f -> f.extEquals("png")).size + ") depth textures? Your custom textures will also be deleted. Restart game to re-generate.", () -> {
                     Vars.dataDirectory.child("mods").child("ShadowShader").findAll(f -> f.extEquals("png")).each(f -> f.delete());
                 });
             }).growX();
 
-            st.row();
+            settings.row();
 
-            st.button("@replay.title", Icon.list, () -> {
+            settings.button("@replay.title", Icon.list, () -> {
                 ReplayUI.showDialog();
             }).growX();
 
-            st.row();
+            settings.row();
 
-            st.button("@mindustry-optifine.modpanel", Icon.layers, () -> {
+            settings.button("@mindustry-optifine.export-preset", Icon.save, () -> {
+                FileChooser.save("mofs").name("preset").submit(file -> {
+                    MofsReader.save(file, MofsReader.KEYS);
+                    Log.info("MindustryOptiFine: exported preset to @", file.path());
+                });
+            }).growX();
+
+            settings.row();
+
+            settings.button("@mindustry-optifine.modpanel", Icon.layers, () -> {
                 new ModPanelDialog().show();
             }).growX();
 
-            st.row();
+            settings.row();
 
-            st.button("@mindustry-optifine.shader-test", Icon.layers, () -> {
+            settings.button("@mindustry-optifine.shader-test", Icon.layers, () -> {
                 showShaderTestDialog();
             }).growX();
         });
+    }
+
+    /** Fills the preset table with a "use custom shading" option and one toggle per .mofs preset file. */
+    void buildPresetList(SettingsMenuDialog.SettingsTable table){
+        table.clear();
+        table.top();
+
+        String selected = Core.settings.getString("optifine-preset", "");
+        ButtonGroup<Button> group = new ButtonGroup<>();
+        group.setMinCheckCount(1);
+        group.setMaxCheckCount(1);
+
+        // Custom shading option - empty value means the main class settings are used.
+        addPresetOption(table, group, "@mindustry-optifine.use-custom-shading", "", selected, () -> {
+            Core.settings.put("optifine-preset", "");
+            loadSettings();
+        });
+
+        for(Fi file : MofsReader.listAllPresets(modRoot, dataDirectory)){
+            String name = file.nameWithoutExtension();
+            addPresetOption(table, group, name, file.name(), selected, () -> {
+                Core.settings.put("optifine-preset", file.name());
+                if(file.exists()) MofsReader.load(file);
+                loadSettings();
+            });
+        }
+
+        table.row();
+        table.button("@mindustry-optifine.import-preset", Icon.folder, () -> {
+            importPreset(table);
+        }).growX().padTop(4f).height(45f).margin(10f);
+    }
+
+    void importPreset(SettingsMenuDialog.SettingsTable table){
+        FileChooser.open("mofs").submit(file -> {
+            if(file == null || !file.exists()) return;
+            Fi dir = MofsReader.externalPresetDir(dataDirectory);
+            if(dir != null && !dir.exists()){
+                dir.mkdirs();
+            }
+            Fi dst = dir.child(file.name());
+            if(!dst.absolutePath().equals(file.absolutePath())){
+                dst.writeString(file.readString());
+            }
+            buildPresetList(table);
+        });
+    }
+
+    void addPresetOption(Table table, ButtonGroup<Button> group, String label, String value, String selected, Runnable onSelect){
+        TextButton button = new TextButton(label, Styles.flatTogglet);
+        button.getLabel().setAlignment(Align.center);
+        button.getLabel().setWrap(true);
+        button.setChecked(value.equals(selected));
+        group.add(button);
+        button.clicked(() -> onSelect.run());
+        table.add(button).growX().padTop(4f).height(45f);
+        table.row();
     }
     
     void showShaderTestDialog(){
@@ -774,6 +875,14 @@ public class MindustryOptiFine extends Mod{
     }
 
     void loadSettings(){
+        String preset = Core.settings.getString("optifine-preset", "");
+        if(!preset.isEmpty()){
+            Fi file = MofsReader.findPreset(modRoot, dataDirectory, preset);
+            if(file != null && file.exists()){
+                MofsReader.load(file);
+            }
+        }
+
         bloomQuality = Core.settings.getInt("al-bloom-quality", 4);
         hideVanillaLights = Core.settings.getBool("al-hide-lights", false);
         setBloom(Core.settings.getBool("al-bloom-enabled", false));
@@ -809,26 +918,47 @@ public class MindustryOptiFine extends Mod{
 
     public void setBloom(boolean on){
         if(on && bloom == null){
-            bloom = new AdditiveBloom(Core.graphics.getWidth(), Core.graphics.getHeight(), bloomQuality);
-
-            bloom.blurPasses = Core.settings.getInt("al-bloom-blur-amount", 2);
-            bloom.flarePasses = Core.settings.getInt("al-bloom-flare-amount", 3);
-            bloom.intensity = Core.settings.getInt("al-bloom-intensity", 75) / 100f;
-            bloom.flareLength = Core.settings.getInt("al-bloom-flare-length", 30) / 10f;
-            bloom.blurSize = Core.settings.getInt("al-bloom-blur-size", 10) / 10f;
-            bloom.flareDirection = Core.settings.getInt("al-bloom-flare-direction", 0);
-
-            bloom.setThreshold(Core.settings.getInt("al-bloom-threshold", 0) / 100f);
-            bloom.setSaturation(Core.settings.getInt("al-bloom-saturation", 10) / 1.25f);
-
-            bloom.setBlurFeedBack(Core.settings.getInt("al-bloom-blur-feedback", 100) / 100f);
-            bloom.setFlareFeedBack(Core.settings.getInt("al-bloom-flare-feedback", 100) / 100f);
-
-            bloom.blurDiffuseAmount = Core.settings.getInt("al-bloom-diffuse-amount", 0);
-            bloom.blurDiffuseSize = Core.settings.getInt("al-bloom-diffuse-size", 175) / 100f;
-            bloom.blurDiffuseFeedBack = Core.settings.getInt("al-bloom-diffuse-feedback", 100) / 100f;
+            bloomCreatedQuality = bloomQuality;
+            recreateBloom();
+            updateBloomParams();
+        }else if(on && bloom != null){
+            if(bloomCreatedQuality != bloomQuality){
+                bloomCreatedQuality = bloomQuality;
+                recreateBloom();
+            }
+            updateBloomParams();
         }
         bloomActive = on;
+    }
+
+    void recreateBloom(){
+        if(bloom != null){
+            bloom.dispose();
+            bloom = null;
+        }
+        bloom = new AdditiveBloom(Core.graphics.getWidth(), Core.graphics.getHeight(), bloomQuality);
+    }
+
+    /** Re-reads every bloom parameter from the current settings store into the live bloom object. */
+    void updateBloomParams(){
+        if(bloom == null) return;
+
+        bloom.blurPasses = Core.settings.getInt("al-bloom-blur-amount", 2);
+        bloom.flarePasses = Core.settings.getInt("al-bloom-flare-amount", 3);
+        bloom.intensity = Core.settings.getInt("al-bloom-intensity", 75) / 100f;
+        bloom.flareLength = Core.settings.getInt("al-bloom-flare-length", 30) / 10f;
+        bloom.blurSize = Core.settings.getInt("al-bloom-blur-size", 10) / 10f;
+        bloom.flareDirection = Core.settings.getInt("al-bloom-flare-direction", 0);
+
+        bloom.setThreshold(Core.settings.getInt("al-bloom-threshold", 0) / 100f);
+        bloom.setSaturation(Core.settings.getInt("al-bloom-saturation", 10) / 1.25f);
+
+        bloom.setBlurFeedBack(Core.settings.getInt("al-bloom-blur-feedback", 100) / 100f);
+        bloom.setFlareFeedBack(Core.settings.getInt("al-bloom-flare-feedback", 100) / 100f);
+
+        bloom.blurDiffuseAmount = Core.settings.getInt("al-bloom-diffuse-amount", 0);
+        bloom.blurDiffuseSize = Core.settings.getInt("al-bloom-diffuse-size", 175) / 100f;
+        bloom.blurDiffuseFeedBack = Core.settings.getInt("al-bloom-diffuse-feedback", 100) / 100f;
     }
 
     TextureRegion get(String name){

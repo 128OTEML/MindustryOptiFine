@@ -316,4 +316,17 @@ public class AdditiveBloom{
         //return new Shader(Core.files.internal("bloomshaders/blurspace.vert"), Core.files.internal("bloomshaders/alpha_gaussian.frag"));
         return new Shader(Core.files.internal("bloomshaders/blurspace.vert"), Vars.tree.get("shaders/feedbackblur.frag"));
     }
+
+    public void dispose(){
+        if(pingPong1 != null) pingPong1.dispose();
+        if(pingPong2 != null) pingPong2.dispose();
+        if(pingPong3 != null) pingPong3.dispose();
+        if(blurShader != null) blurShader.dispose();
+        if(renderShader != null) renderShader.dispose();
+        if(thresholdShader != null) thresholdShader.dispose();
+        if(diffuseShader != null) diffuseShader.dispose();
+
+        pingPong1 = pingPong2 = pingPong3 = null;
+        blurShader = renderShader = thresholdShader = diffuseShader = null;
+    }
 }

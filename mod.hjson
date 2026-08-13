@@ -14,7 +14,7 @@ main: "MindustryOptiFine.MindustryOptiFine"
 description: "A modern shaders mod for Mindustry."
 
 #the mod version
-version: 10
+version: 11
 
 #the minimum game build required to run this mod
 minGameVersion: 157
