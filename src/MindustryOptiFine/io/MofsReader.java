@@ -72,14 +72,13 @@ public class MofsReader{
         return value;
     }
 
-    /** Serializes the current settings store into preset text format. */
+    /** Serializes the current settings store into preset text format, always including every given key. */
     public static String export(String... keys){
         StringBuilder sb = new StringBuilder();
         for(String key : keys){
-            if(settings.has(key)){
-                Object value = settings.get(key, null);
-                sb.append(key).append(" = ").append(value).append("\n");
-            }
+            Object value = settings.has(key) ? settings.get(key, null) : settings.getDefault(key);
+            if(value == null) continue;
+            sb.append(key).append(" = ").append(value).append("\n");
         }
         return sb.toString();
     }
