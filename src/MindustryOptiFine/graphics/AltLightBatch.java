@@ -485,7 +485,10 @@ public class AltLightBatch extends SpriteBatch{
 
     @Override
     protected void setShader(Shader shader, boolean apply){
-        if(!flushing) return;
+        //Vanilla SpriteBatch throws when setting a shader while sorting is enabled and not flushing;
+        //swallow that case silently instead of crashing. When sorting is disabled the shader is
+        //forwarded immediately, matching vanilla behavior.
+        if(!flushing && sort) return;
 
         Shader alt;
         if(shader != null && (alt = MindustryOptiFine.validShaders.get(shader)) != null){

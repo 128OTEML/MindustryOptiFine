@@ -12,10 +12,10 @@ public class Layers {
     public static final float shadowTier1 = 29.1f;
     
     /** Tier 2: Sombras de bloques 3x3 */
-    public static final float shadowTier2 = 50.2f;
+    public static final float shadowTier2 = 29.2f;
     
     /** Tier 3: Sombras de bloques 4x4 y 5x5 */
-    public static final float shadowTier3 = 50.3f;
+    public static final float shadowTier3 = 29.3f;
     
     /** Tier 4: Sombras de bloques 6x6+ y montañas */
     public static final float shadowMountain = 54.5f;

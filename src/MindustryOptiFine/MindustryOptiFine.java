@@ -73,6 +73,9 @@ public class MindustryOptiFine extends Mod{
     public static IntMap<EnviroGlow> glowingEnvTiles = new IntMap<>();
     public static IntSet uvAutoGlowRegions = new IntSet();
     public static Shader screenShader, smoothAlphaCutShader;
+    //vanilla fluid shader references captured at FileTreeInitEvent, before other mods can replace them
+    static Shader vanillaSlagShader, vanillaCryofluidShader, vanillaSpaceShader;
+    static boolean fluidShadersSnapshotted;
     public static AdditiveBloom bloom;
     public static boolean bloomActive;
     static FrameBuffer buffer, subBuffer, subBuffer2;
@@ -118,7 +121,17 @@ public class MindustryOptiFine extends Mod{
                 Draw.draw(Layer.light - 0.01f, this::hideLights);
             }
         });
-        Events.on(FileTreeInitEvent.class, e -> Core.app.post(() -> {
+        Events.on(FileTreeInitEvent.class, e -> {
+            //capture the vanilla fluid shaders synchronously, before other mods' loadContent()/init() can replace them.
+            //Shaders.init() already ran (Renderer ctor), so these are the true vanilla references.
+            if(!fluidShadersSnapshotted){
+                vanillaSlagShader = Shaders.slag;
+                vanillaCryofluidShader = Shaders.cryofluid;
+                vanillaSpaceShader = Shaders.space;
+                fluidShadersSnapshotted = true;
+            }
+
+            Core.app.post(() -> {
             loadValidShaders();
 
             batch = new AltLightBatch();
@@ -183,9 +196,10 @@ public class MindustryOptiFine extends Mod{
                     
                     	gl_FragColor = c;
                     }
-                    """);
-        }));
-        Events.on(ClientLoadEvent.class, e -> {
+""");
+        });
+    });
+    Events.on(ClientLoadEvent.class, e -> {
             loadSettings();
             Core.app.post(() -> {
                 load();
@@ -627,9 +641,12 @@ public class MindustryOptiFine extends Mod{
         }
 
         table.row();
-        table.button("@mindustry-optifine.import-preset", Icon.folder, () -> {
-            importPreset(table);
-        }).growX().padTop(4f).height(45f).margin(10f);
+        table.table(bt -> {
+            bt.defaults().growX().height(45f).margin(10f);
+            bt.button("@mindustry-optifine.import-preset", Icon.folder, () -> importPreset(table));
+            bt.button("@mindustry-optifine.open-preset-folder", Icon.link, () -> openPresetFolder());
+            bt.button("@mindustry-optifine.delete-preset", Icon.trash, () -> deletePreset(table));
+        }).growX().padTop(4f);
     }
 
     void importPreset(SettingsMenuDialog.SettingsTable table){
@@ -643,6 +660,31 @@ public class MindustryOptiFine extends Mod{
             if(!dst.absolutePath().equals(file.absolutePath())){
                 dst.writeString(file.readString());
             }
+            buildPresetList(table);
+        });
+    }
+
+    void openPresetFolder(){
+        Fi dir = MofsReader.externalPresetDir(dataDirectory);
+        if(dir != null && !dir.exists()){
+            dir.mkdirs();
+        }
+        if(dir != null) Core.app.openFolder(dir.absolutePath());
+    }
+
+    void deletePreset(SettingsMenuDialog.SettingsTable table){
+        String name = Core.settings.getString("optifine-preset", "");
+        if(name.isEmpty()) return;
+
+        Fi file = MofsReader.findPreset(modRoot, dataDirectory, name);
+        if(file == null || !file.exists() || !file.absolutePath().startsWith(MofsReader.externalPresetDir(dataDirectory).absolutePath())){
+            return;
+        }
+
+        ui.showConfirm("@mindustry-optifine.delete-preset.confirm", () -> {
+            file.delete();
+            Core.settings.put("optifine-preset", "");
+            loadSettings();
             buildPresetList(table);
         });
     }
@@ -1456,6 +1498,20 @@ public class MindustryOptiFine extends Mod{
         Renderer.bridgeOpacity = bridge;
     }
 
+    /** Returns whether the given cache layer still uses its original vanilla fluid shader.
+     *  Layers whose fluid shader was replaced by another mod are skipped by the mod's re-render,
+     *  so the mod shader is applied only once by the vanilla floor pass.
+     *  Compares against snapshots of the shader references captured at FileTreeInitEvent,
+     *  before any mod could replace them, so a mod that swaps BOTH CacheLayer.shader and
+     *  Shaders.xxx is still detected as non-vanilla. */
+    static boolean isVanillaFluidLayer(CacheLayer layer){
+        if(!(layer instanceof CacheLayer.ShaderLayer shaderLayer)) return false;
+        if(layer == CacheLayer.slag) return shaderLayer.shader == vanillaSlagShader;
+        if(layer == CacheLayer.cryofluid) return shaderLayer.shader == vanillaCryofluidShader;
+        if(layer == CacheLayer.space) return shaderLayer.shader == vanillaSpaceShader;
+        return false;
+    }
+
     void draw(){
         buffer.resize(Core.graphics.getWidth(), Core.graphics.getHeight());
         subBuffer.resize(Core.graphics.getWidth(), Core.graphics.getHeight());
@@ -1471,9 +1527,10 @@ public class MindustryOptiFine extends Mod{
                     FloorRenderer fr = Vars.renderer.blocks.floor;
 
                     fr.beginDraw();
-                    fr.drawLayer(CacheLayer.slag);
-                    fr.drawLayer(CacheLayer.cryofluid);
-                    fr.drawLayer(CacheLayer.space);
+                    //skip layers whose fluid shader was replaced by another mod - the vanilla floor pass already applied it once
+                    if(isVanillaFluidLayer(CacheLayer.slag)) fr.drawLayer(CacheLayer.slag);
+                    if(isVanillaFluidLayer(CacheLayer.cryofluid)) fr.drawLayer(CacheLayer.cryofluid);
+                    if(isVanillaFluidLayer(CacheLayer.space)) fr.drawLayer(CacheLayer.space);
                 });
                 Draw.draw(Layer.block - 0.09f, () -> staticRenderer.drawWalls());
             }
