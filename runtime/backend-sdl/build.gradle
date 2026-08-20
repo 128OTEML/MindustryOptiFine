@@ -1,0 +1,145 @@
+apply plugin: "java"
+
+version = "v159.7"
+
+sourceSets.main.java.srcDirs = ["src"]
+sourceSets.main.resources.srcDirs = ["libs/linux64", "libs/macosx64", "libs/windows32", "libs/windows64"]
+
+repositories{
+    mavenCentral()
+    maven{ url = "https://raw.githubusercontent.com/Zelaux/MindustryRepo/master/repository" }
+    maven{ url = 'https://www.jitpack.io' }
+}
+
+dependencies{
+    compileOnly "com.github.Anuken.Arc:arc-core:$version"
+    testImplementation "com.github.Anuken.Arc:arc-core:$version"
+}
+
+jar{
+    //drop-in replacement for the game's bundled arc-sdl.jar
+    archiveFileName = "arc-sdl.jar"
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+/*
+The native (JNI) rebuild targets are optional and only wired up when building with -Pjnigen,
+e.g. ./gradlew :runtime:backend-sdl:jnigen -Pjnigen
+
+The rest of the build (compiling the patched Java backend + packaging the prebuilt natives
+from libs/) does not touch jnigen at all, so the mod CI (`gradlew deploy`) stays fast and clean.
+
+PACKAGES: Linux (Ubuntu)
+- libdrm-dev
+- libsdl2-dev
+- libgbm-dev
+
+PACKAGES: Linux -> Windows Cross-Compilation
+- mingw32
+
+PACKAGES: Mac
+- sdl2
+- glew
+ */
+if(project.hasProperty("jnigen")){
+    apply plugin: "com.badlogicgames.jnigen.jnigen-gradle"
+
+    task preJni{
+        def root = "build/jnigen/sources"
+
+        doFirst{
+            file(root).mkdirs()
+            if(!file("$root/glew.zip").exists()){
+                println "Fetching GLEW source..."
+                "curl -o $projectDir/$root/glew.zip -L https://github.com/nigels-com/glew/releases/download/glew-2.2.0/glew-2.2.0.zip".execute().waitFor()
+                "unzip -qq -d $projectDir/$root $projectDir/$root/glew.zip".execute().waitFor()
+            }
+
+            if(!file("$root/sdlmingw.tar.gz").exists()){
+                println "Fetching SDL-mingw builds..."
+                "curl -o $projectDir/$root/sdlmingw.tar.gz -L https://www.libsdl.org/release/SDL2-devel-2.32.8-mingw.tar.gz".execute().waitFor()
+                "tar -xvzf $projectDir/$root/sdlmingw.tar.gz -C $projectDir/$root".execute().waitFor()
+            }
+        }
+    }
+
+    jnigen{
+        def execCmd = { cmd ->
+            try{
+                def process = cmd instanceof List ? new ProcessBuilder(cmd).redirectErrorStream(true).start() : Runtime.getRuntime().exec(cmd)
+                process.waitFor()
+                Scanner s = new Scanner(process.getInputStream()).useDelimiter("\\A")
+                return s.hasNext() ? s.next().trim() : ""
+            }catch(Exception ignored){
+                return ""
+                //fail silently, because this is run during standard builds and it shouldn't fail
+            }
+        }
+
+        def splitArgs = { value ->
+            return value == null || value.isBlank() ? [] : value.trim().split(/\s+/).findAll{ !it.isBlank() }
+        }
+
+        def normalizeWindowsArg = { value ->
+            if(value == null) return value
+            if(value ==~ /^\/[A-Za-z]\/.*/){
+                return value.substring(1, 2).toUpperCase() + ":/" + value.substring(3)
+            }
+            if(value ==~ /^-[IL]\/[A-Za-z]\/.*/){
+                return value.substring(0, 2) + value.substring(3, 4).toUpperCase() + ":/" + value.substring(5)
+            }
+            return value
+        }
+
+        sharedLibName = "sdl-arc"
+        libsDir = "libs"
+
+        def sdlVersion = "2.32.8"
+        def mainRoot = "build/jnigen/sources"
+
+        all{
+            cIncludes = ["$mainRoot/glew-2.2.0/src/glew.c"]
+            headerDirs = ["$mainRoot/glew-2.2.0/include"]
+        }
+
+        addLinux(x64, x86){
+            cppFlags += execCmd("sdl2-config --cflags").split(" ")
+            cFlags = cppFlags
+            libraries = (execCmd("sdl2-config --libs") + " -Wl,-Bdynamic -lGL").split(" ")
+            linkerFlags = "-shared -m64".split(" ")
+        }
+
+        addWindows(x64, x86){
+            def path = "SDL2-$sdlVersion/x86_64-w64-mingw32"
+            def root = "$projectDir/build/jnigen/sources"
+            def sdlRoot = "$root/$path"
+            def gitSh = new File("C:/Program Files/Git/bin/sh.exe").exists() ? "C:/Program Files/Git/bin/sh.exe" :
+                    new File("C:/Program Files/Git/usr/bin/sh.exe").exists() ? "C:/Program Files/Git/usr/bin/sh.exe" : "sh"
+            headerDirs += (String[])["$mainRoot/$path/include/SDL2"]
+            cppFlags += splitArgs(execCmd([gitSh, sdlRoot.replace("\\", "/") + "/bin/sdl2-config", "--cflags"])).collect(normalizeWindowsArg)
+            cFlags = cppFlags
+            libraries = splitArgs(execCmd([gitSh, sdlRoot.replace("\\", "/") + "/bin/sdl2-config", "--static-libs"]) + " -lopengl32").collect(normalizeWindowsArg)
+            linkerFlags += (String[])["-L${sdlRoot.replace("\\", "/")}/lib"]
+        }
+
+        if(System.getProperty("os.arch") != "aarch64"){
+            addMac(x64, ARM){
+                cppFlags = cFlags = (execCmd("sdl2-config --cflags") + " -c -Wall -O2 -arch x86_64 -DFIXED_POINT -fmessage-length=0 -fPIC -mmacosx-version-min=10.9 -stdlib=libc++").split(" ")
+                linkerFlags = "-shared -arch x86_64 -mmacosx-version-min=10.9 -stdlib=libc++".split(" ")
+                libraries = "/usr/local/lib/libSDL2.a -lm -liconv -Wl,-framework,CoreAudio -Wl,-framework,CoreHaptics -Wl,-weak_framework,GameController -Wl,-framework,OpenGL,-weak_framework,AudioToolbox -Wl,-framework,ForceFeedback -lobjc -Wl,-framework,CoreVideo -Wl,-framework,Cocoa -Wl,-framework,Carbon -Wl,-framework,IOKit -Wl,-weak_framework,QuartzCore -Wl,-weak_framework,Metal /usr/local/lib/libGLEW.a".split(" ")
+            }
+        }else{
+            //doesn't work on CI, have to use native M1
+            addMac(x64, x86){
+                cppFlags = cFlags = (execCmd("sdl2-config --cflags") + " -c -Wall -O2 -arch arm64 -DFIXED_POINT -fmessage-length=0 -fPIC -mmacosx-version-min=10.9 -stdlib=libc++").split(" ")
+                linkerFlags = "-shared -arch arm64 -mmacosx-version-min=10.9 -stdlib=libc++".split(" ")
+                libraries = "/usr/local/lib/libSDL2.a -lm -liconv -Wl,-framework,CoreAudio -Wl,-weak_framework,GameController -Wl,-framework,OpenGL,-weak_framework,AudioToolbox -Wl,-framework,ForceFeedback -lobjc -Wl,-framework,CoreVideo -Wl,-framework,Cocoa -Wl,-framework,Carbon -Wl,-framework,IOKit -Wl,-weak_framework,QuartzCore -Wl,-weak_framework,Metal /usr/local/lib/libGLEW.a".split(" ")
+            }
+        }
+    }
+
+    getTasksByName("jnigen", true).each{
+        it.dependsOn preJni
+        it.dependsOn classes
+    }
+}
