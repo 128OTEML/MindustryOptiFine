@@ -114,6 +114,10 @@ public class MindustryOptiFine extends Mod{
 
         if(Vars.headless) return;
 
+        // ========== External fluid shader replacement (ported from Factoriodustry scripts/shaders.js) ==========
+        //Everything is created lazily on ClientLoadEvent, never during mod class loading.
+        FluidShaders.init();
+
         // ========== AdvanceLighting 事件 ==========
         Events.run(Trigger.drawOver, () -> Draw.draw(Layer.fogOfWar + 2f, this::draw));
         Events.run(Trigger.draw, () -> {
@@ -708,6 +712,7 @@ public class MindustryOptiFine extends Mod{
             p.row();
             
             testShaderModule(p, "Mod Panel Shader", 128, 64, () -> {
+                if(ModShaders.panel == null) return;
                 Draw.shader(ModShaders.panel);
                 Draw.color(Color.white);
                 if(ShaderCache.getNoiseTexture() != null){
@@ -717,6 +722,7 @@ public class MindustryOptiFine extends Mod{
             });
             
             testShaderModule(p, "Powerful Sun Shader", 128, 128, () -> {
+                if(ModShaders.sun == null) return;
                 Draw.shader(ModShaders.sun);
                 ModShaders.sun.setUniformf("u_inColor", Color.yellow);
                 Draw.color(Color.white);
@@ -725,6 +731,7 @@ public class MindustryOptiFine extends Mod{
             });
             
             testShaderModule(p, "Blur Shader", 128, 64, () -> {
+                if(ModShaders.blur == null) return;
                 Draw.shader(ModShaders.blur);
                 ModShaders.blur.radius = 8f;
                 ModShaders.blur.horizontal = true;
@@ -734,6 +741,7 @@ public class MindustryOptiFine extends Mod{
             });
             
             testShaderModule(p, "Vignette Shader", 128, 64, () -> {
+                if(ModShaders.vignette == null) return;
                 Draw.shader(ModShaders.vignette);
                 ModShaders.vignette.intensity = 0.8f;
                 ModShaders.vignette.smoothness = 0.3f;
@@ -743,6 +751,7 @@ public class MindustryOptiFine extends Mod{
             });
             
             testShaderModule(p, "Color Tweak", 128, 64, () -> {
+                if(ModShaders.colortweak == null) return;
                 Draw.shader(ModShaders.colortweak);
                 ModShaders.colortweak.brightness = 1.2f;
                 ModShaders.colortweak.contrast = 1.5f;
@@ -753,6 +762,7 @@ public class MindustryOptiFine extends Mod{
             });
             
             testShaderModule(p, "Distortion Shader", 128, 64, () -> {
+                if(ModShaders.distortion == null) return;
                 Draw.shader(ModShaders.distortion);
                 ModShaders.distortion.strength = 0.1f;
                 Draw.color(Color.white);
@@ -761,6 +771,7 @@ public class MindustryOptiFine extends Mod{
             });
             
             testShaderModule(p, "Glow Shader", 128, 64, () -> {
+                if(ModShaders.glow == null) return;
                 Draw.shader(ModShaders.glow);
                 ModShaders.glow.threshold = 0.5f;
                 ModShaders.glow.intensity = 2f;
@@ -770,6 +781,7 @@ public class MindustryOptiFine extends Mod{
             });
             
             testShaderModule(p, "Chromatic Aberration", 128, 64, () -> {
+                if(ModShaders.chromatic == null) return;
                 Draw.shader(ModShaders.chromatic);
                 ModShaders.chromatic.intensity = 0.05f;
                 Draw.color(Color.white);
@@ -778,6 +790,7 @@ public class MindustryOptiFine extends Mod{
             });
             
             testShaderModule(p, "Scanline Shader", 128, 64, () -> {
+                if(ModShaders.scanline == null) return;
                 Draw.shader(ModShaders.scanline);
                 ModShaders.scanline.lineHeight = 3f;
                 ModShaders.scanline.opacity = 0.3f;
@@ -787,6 +800,7 @@ public class MindustryOptiFine extends Mod{
             });
             
             testShaderModule(p, "Pixelation Shader", 128, 64, () -> {
+                if(ModShaders.pixelation == null) return;
                 Draw.shader(ModShaders.pixelation);
                 ModShaders.pixelation.pixelSize = 16f;
                 Draw.color(Color.white);
@@ -795,6 +809,7 @@ public class MindustryOptiFine extends Mod{
             });
             
             testShaderModule(p, "Primitive Shader", 128, 64, () -> {
+                if(ModShaders.primitive == null) return;
                 Draw.shader(ModShaders.primitive);
                 ModShaders.primitive.color = Color.cyan;
                 Draw.rect(Core.atlas.find("whiteui"), 64, 32, 128, 64);
@@ -802,6 +817,7 @@ public class MindustryOptiFine extends Mod{
             });
             
             testShaderModule(p, "Metaball Shader", 128, 64, () -> {
+                if(ModShaders.metaball == null) return;
                 Draw.shader(ModShaders.metaball);
                 ModShaders.metaball.threshold = 0.5f;
                 Draw.color(Color.white);

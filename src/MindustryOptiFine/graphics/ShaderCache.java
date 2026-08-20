@@ -31,6 +31,7 @@ public class ShaderCache{
     }
 
     private static void renderNoise(){
+        if(ModShaders.panel == null) return;
         noiseBuffer.begin(Color.clear);
         ModShaders.panel.bind();
         ModShaders.panel.apply();

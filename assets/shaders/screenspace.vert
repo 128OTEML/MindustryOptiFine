@@ -1,9 +1,7 @@
-attribute vec2 a_position;
-attribute vec2 a_texCoord;
-
-varying vec2 v_texCoord;
-
+attribute vec4 a_position;
+attribute vec2 a_texCoord0;
+varying vec2 v_texCoords;
 void main(){
-    v_texCoord = a_texCoord;
-    gl_Position = vec4(a_position, 0.0, 1.0);
+    v_texCoords = a_texCoord0;
+    gl_Position = a_position;
 }

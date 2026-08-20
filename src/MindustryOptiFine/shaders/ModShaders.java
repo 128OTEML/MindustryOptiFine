@@ -2,8 +2,10 @@ package MindustryOptiFine.shaders;
 
 import arc.*;
 import arc.files.*;
+import arc.func.*;
 import arc.graphics.*;
 import arc.graphics.gl.*;
+import arc.util.*;
 import mindustry.graphics.*;
 
 import static mindustry.Vars.*;
@@ -24,19 +26,30 @@ public class ModShaders{
     public static MetaballShader metaball;
 
     public static void init(){
-        screenspace = new LoadShader("screenspace", "screenspace");
-        blur = new BlurShader();
-        colortweak = new ColorTweakShader();
-        distortion = new DistortionShader();
-        glow = new GlowShader();
-        vignette = new VignetteShader();
-        chromatic = new ChromaticAberrationShader();
-        scanline = new ScanlineShader();
-        pixelation = new PixelationShader();
-        panel = new ModPanelShader();
-        sun = new PowerfulSunShader();
-        primitive = new PrimitiveShader();
-        metaball = new MetaballShader();
+        screenspace = safe("screenspace", () -> new LoadShader("screenspace", "screenspace"));
+        blur = safe("blur", () -> new BlurShader());
+        colortweak = safe("colortweak", () -> new ColorTweakShader());
+        distortion = safe("distortion", () -> new DistortionShader());
+        glow = safe("glow", () -> new GlowShader());
+        vignette = safe("vignette", () -> new VignetteShader());
+        chromatic = safe("chromatic", () -> new ChromaticAberrationShader());
+        scanline = safe("scanline", () -> new ScanlineShader());
+        pixelation = safe("pixelation", () -> new PixelationShader());
+        panel = safe("panel", () -> new ModPanelShader());
+        sun = safe("sun", () -> new PowerfulSunShader());
+        primitive = safe("primitive", () -> new PrimitiveShader());
+        metaball = safe("metaball", () -> new MetaballShader());
+    }
+
+    private static <T> T safe(String name, Prov<T> constructor){
+        try{
+            T shader = constructor.get();
+            Log.info("ModShaders: loaded " + name + " successfully");
+            return shader;
+        }catch(Exception e){
+            Log.err("ModShaders: failed to load " + name + " (shader resource disabled?): " + e.getMessage());
+            return null;
+        }
     }
 
     public static class LoadShader extends Shader{

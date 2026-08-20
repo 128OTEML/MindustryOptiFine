@@ -15,6 +15,8 @@ import arc.struct.ObjectFloatMap;
 import arc.struct.ObjectMap;
 import arc.struct.Seq;
 import mindustry.Vars;
+import mindustry.graphics.Layer;
+import mindustry.graphics.Shaders;
 import mindustry.world.Block;
 import mindustry.world.Tile;
 import mindustry.world.blocks.environment.Floor;
@@ -59,6 +61,13 @@ public class ShadowRenderer {
     private static TextureRegion emptyRegion;
     private static float lastFboScale = -1f;
 
+    /** Captura de las capas [flyingUnitLow, flyingUnit] del pase de sombras; u_flying de FluidShaders la muestrea. */
+    public static FrameBuffer flyingCapture;
+
+    public static FrameBuffer getFlyingBuffer() {
+        return flyingCapture;
+    }
+
     public static float currentSunElevation = 0f, currentCycleProgress = 0f;
     private static final ObjectFloatMap<Integer> bridgeWarmupMap = new ObjectFloatMap<>();
     private static final ObjectMap<Integer, float[]> bridgePosMap = new ObjectMap<>();
@@ -71,7 +80,25 @@ public class ShadowRenderer {
     private static float lastCachedCamW = 0f;
 
     public static void queue() {
-        if (!enabled || Vars.headless || !Vars.state.isGame()) return;
+        if (Vars.headless || !Vars.state.isGame()) return;
+
+        //Captura voladora para u_flying de FluidShaders: recolecta [flyingUnitLow, flyingUnit]
+        //(incluye las sombras de unidades dibujadas en flyingUnitLow-0.005f, más abajo) y re-blittea
+        //a pantalla. Vive aquí para que el reflejo vaya directo por Shadow2, sin canal de captura aparte.
+        Draw.draw(Layer.flyingUnitLow - 0.01f, () -> {
+            if (Shaders.screenspace == null) return;
+            if (flyingCapture == null) flyingCapture = new FrameBuffer();
+            flyingCapture.resize(Core.graphics.getWidth(), Core.graphics.getHeight());
+            flyingCapture.begin(Color.clear);
+        });
+        Draw.draw(Layer.flyingUnit + 0.01f, () -> {
+            if (flyingCapture != null) {
+                flyingCapture.end();
+                if (Shaders.screenspace != null) flyingCapture.blit(Shaders.screenspace);
+            }
+        });
+
+        if (!enabled) return;
         if (emptyRegion == null) emptyRegion = Core.atlas.find("clear");
 
         final float rotTicks    = 1620f * 60f;
@@ -374,18 +401,21 @@ public class ShadowRenderer {
                     Draw.rect(tierReg3[tier], camX, camY, camW, camH);
                     Draw.color();
                 }
-
-                // Sombras de unidades dibujadas sobre la textura ya desenfocada (no participan del blur)
-                if (!unitShadows.isEmpty()) {
-                    for (UnitShadowData ud : unitShadows) {
-                        if (ud.tier != tier) continue;
-                        Draw.color(0.04f, 0.03f, 0.08f, ud.alpha * alpha);
-                        Draw.rect(ud.region, ud.x, ud.y, ud.w, ud.h, ud.rotation - 90);
-                    }
-                    Draw.color();
-                }
             });
         }
+
+        // Sombras de unidades dibujadas dentro de la ventana de captura voladora de FluidShaders
+        // (justo debajo de flyingUnitLow): así quedan tanto en pantalla (vía el blit del buffer)
+        // como en u_flying, sin duplicarse y sin arrastrar el sombreado de edificios de los tiers.
+        Draw.draw(Layer.flyingUnitLow - 0.005f, () -> {
+            if (!unitShadows.isEmpty()) {
+                for (UnitShadowData ud : unitShadows) {
+                    Draw.color(0.04f, 0.03f, 0.08f, ud.alpha * alpha);
+                    Draw.rect(ud.region, ud.x, ud.y, ud.w, ud.h, ud.rotation - 90);
+                }
+                Draw.color();
+            }
+        });
 
 
     }

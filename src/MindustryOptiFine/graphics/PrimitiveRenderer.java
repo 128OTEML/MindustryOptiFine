@@ -169,6 +169,7 @@ public class PrimitiveRenderer{
         
         mesh.setIndices(indices, 0, indexCount);
         
+        if(ModShaders.primitive == null) return;
         ModShaders.primitive.bind();
         ModShaders.primitive.apply();
         

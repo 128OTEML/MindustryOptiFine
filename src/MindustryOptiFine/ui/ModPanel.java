@@ -28,7 +28,7 @@ public class ModPanel extends Table {
         update(() -> {
             targetHoverProgress = hovered ? 1f : 0f;
             hoverProgress += (targetHoverProgress - hoverProgress) * 0.1f;
-            ModShaders.panel.hoverIntensity = hoverProgress;
+            if(ModShaders.panel != null) ModShaders.panel.hoverIntensity = hoverProgress;
         });
         
         addListener(new InputListener() {
@@ -51,7 +51,7 @@ public class ModPanel extends Table {
         float x = getX(0);
         float y = getY(0);
         
-        if(useShaderBackground && ShaderCache.getNoiseTexture() != null){
+        if(useShaderBackground && ModShaders.panel != null && ShaderCache.getNoiseTexture() != null){
             Draw.shader(ModShaders.panel);
             Draw.color(Color.white);
             Draw.rect(ShaderCache.getNoiseTexture(), x + width / 2, y + height / 2, width, height);

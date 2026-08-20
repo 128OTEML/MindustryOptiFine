@@ -51,6 +51,7 @@ public class MetaballManager{
 
     private static void draw(){
         if(metaballs.isEmpty()) return;
+        if(ModShaders.metaball == null) return;
         
         if(buffer == null || buffer.getWidth() != Core.graphics.getWidth() || buffer.getHeight() != Core.graphics.getHeight()){
             if(buffer != null) buffer.dispose();
