@@ -29,6 +29,7 @@ import MindustryOptiFine.utils.*;
 import MindustryOptiFine.core.graphics.postprocessing.PostProcessingPipeline;
 import MindustryOptiFine.core.graphics.automators.RenderTargetManager;
 import MindustryOptiFine.core.graphics.CoreGraphicsInit;
+import MindustryOptiFine.threaded.*;
 import mindustry.*;
 import mindustry.content.*;
 import mindustry.core.*;
@@ -84,7 +85,7 @@ public class MindustryOptiFine extends Mod{
     static Seq<Tile> tileView;
     static Rect view = new Rect();
 
-    static int bloomQuality = 4;
+    public static int bloomQuality = 4;
     static int bloomCreatedQuality = -1;
     static boolean hideVanillaLights = false, renderEnvironment = true;
     static boolean test = false;
@@ -113,6 +114,9 @@ public class MindustryOptiFine extends Mod{
     public MindustryOptiFine(){
 
         if(Vars.headless) return;
+
+        // ========== L1 frame pipeline: hook the loop via ApplicationListener (no backend patch needed) ==========
+        FramePipeline.hook();
 
         // ========== External fluid shader replacement (ported from Factoriodustry scripts/shaders.js) ==========
         //Everything is created lazily on ClientLoadEvent, never during mod class loading.
@@ -265,18 +269,21 @@ public class MindustryOptiFine extends Mod{
             }
             
             if(autoQualityEnabled && Core.camera != null){
-                updateDynamicQuality();
+                SchedQuality.tick();
             }
+            SchedQuality.demo();
+            L2SharedPass.tick();
             
             CoreGraphicsInit.updateAll();
         });
         
         Events.run(EventType.Trigger.draw, () -> {
             CoreGraphicsInit.drawAll();
+            L2SharedPass.drawOverlay();
         });
     }
     
-    private void updateDynamicQuality(){
+    public static void updateDynamicQuality(){
         currentZoom = renderer.getDisplayScale();
         
         if(currentZoom <= 0.5f){
@@ -583,6 +590,22 @@ public class MindustryOptiFine extends Mod{
             settings.row();
 
             settings.checkPref("al-auto-quality", true, b -> autoQualityEnabled = b);
+
+            settings.checkPref("al-l2-pass", false, b -> L2SharedPass.enabled = b);
+            settings.sliderPref("al-l2-passes", 4, 1, 16, s -> {
+                L2SharedPass.passCount = s;
+                return s + " passes";
+            });
+
+            settings.checkPref("al-sched-pipeline", true, b -> {
+                SchedulerProbe.disabled = !b;
+                if(b) SchedulerProbe.refresh();
+            });
+            settings.sliderPref("al-sched-load", 0, 0, 20, s -> {
+                SchedQuality.demoLoadNanos = s * 1_000_000L;
+                return s + " ms";
+            });
+            settings.button("@mindustry-optifine.sched-stats", Icon.info, () -> ui.showInfo(SchedulerProbe.stats())).growX();
 
             settings.button("Delete Depth Textures", Icon.trash, () -> {
                 ui.showConfirm("Delete all(" + dataDirectory.child("mods").child("ShadowShader").findAll(f -> f.extEquals("png")).size + ") depth textures? Your custom textures will also be deleted. Restart game to re-generate.", () -> {
@@ -972,6 +995,10 @@ public class MindustryOptiFine extends Mod{
         }
         
         autoQualityEnabled = Core.settings.getBool("al-auto-quality", true);
+        SchedQuality.demoLoadNanos = Core.settings.getInt("al-sched-load", 0) * 1_000_000L;
+        SchedulerProbe.disabled = !Core.settings.getBool("al-sched-pipeline", true);
+        L2SharedPass.enabled = Core.settings.getBool("al-l2-pass", false);
+        L2SharedPass.passCount = Core.settings.getInt("al-l2-passes", 4);
     }
 
     public void setBloom(boolean on){

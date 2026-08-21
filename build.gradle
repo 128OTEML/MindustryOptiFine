@@ -85,6 +85,13 @@ tasks.register('jarAndroid'){
     }
 }
 
+// Packaged mod jar for portable play: Desktop jar + mod.hjson + assets.
+tasks.register('packageMod', Jar){
+    dependsOn "jar"
+    archiveFileName = "${project.name}.jar"
+    from(zipTree("build/libs/${project.name}Desktop.jar"))
+}
+
 jar{
     archiveFileName = "${project.name}Desktop.jar"
 

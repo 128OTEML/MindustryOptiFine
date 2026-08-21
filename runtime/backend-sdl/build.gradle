@@ -12,7 +12,10 @@ repositories{
 }
 
 dependencies{
-    compileOnly "com.github.Anuken.Arc:arc-core:$version"
+    // arc-core is provided by the game at runtime, but jnigen 3.x resolves the
+    // NativeCodeGenerator's classpath from the *main* sourceSet's runtimeClasspath
+    // (see JnigenTask), so it must be present there too, not just compileOnly.
+    implementation "com.github.Anuken.Arc:arc-core:$version"
     testImplementation "com.github.Anuken.Arc:arc-core:$version"
 }
 
@@ -46,24 +49,57 @@ if(project.hasProperty("jnigen")){
 
     task preJni{
         def root = "build/jnigen/sources"
+        def isWindows = System.getProperty("os.name").toLowerCase().contains("windows")
 
         doFirst{
             file(root).mkdirs()
+
+            // cross-platform download: PowerShell on Windows, curl everywhere else
+            def download = { url, out ->
+                if(isWindows){
+                    "powershell -Command \"Invoke-WebRequest -Uri '$url' -OutFile '$out'\"".execute().waitFor()
+                }else{
+                    "curl -L -o $out $url".execute().waitFor()
+                }
+            }
+
             if(!file("$root/glew.zip").exists()){
                 println "Fetching GLEW source..."
-                "curl -o $projectDir/$root/glew.zip -L https://github.com/nigels-com/glew/releases/download/glew-2.2.0/glew-2.2.0.zip".execute().waitFor()
-                "unzip -qq -d $projectDir/$root $projectDir/$root/glew.zip".execute().waitFor()
+                def glewUrl = "https://github.com/nigels-com/glew/releases/download/glew-2.2.0/glew-2.2.0.zip"
+                def glewZip = file("$root/glew.zip")
+
+                download(glewUrl, glewZip.absolutePath)
+
+                if(isWindows){
+                    "powershell -Command \"Expand-Archive -Path '${glewZip.absolutePath}' -DestinationPath '${file(root).absolutePath}' -Force\"".execute().waitFor()
+                }else{
+                    "unzip -qq -d ${file(root).absolutePath} ${glewZip.absolutePath}".execute().waitFor()
+                }
             }
 
             if(!file("$root/sdlmingw.tar.gz").exists()){
                 println "Fetching SDL-mingw builds..."
-                "curl -o $projectDir/$root/sdlmingw.tar.gz -L https://www.libsdl.org/release/SDL2-devel-2.32.8-mingw.tar.gz".execute().waitFor()
-                "tar -xvzf $projectDir/$root/sdlmingw.tar.gz -C $projectDir/$root".execute().waitFor()
+                def sdlUrl = "https://www.libsdl.org/release/SDL2-devel-2.32.8-mingw.tar.gz"
+                def sdlTar = file("$root/sdlmingw.tar.gz")
+
+                download(sdlUrl, sdlTar.absolutePath)
+                "tar -xvzf ${sdlTar.absolutePath} -C ${file(root).absolutePath}".execute().waitFor()
             }
         }
     }
 
     jnigen{
+        sharedLibName = "sdl-arc"
+        libsDir = "libs"
+
+        def sdlVersion = "2.32.8"
+        def mainRoot = "build/jnigen/sources"
+
+        all{
+            cIncludes = ["$mainRoot/glew-2.2.0/src/glew.c"]
+            headerDirs = ["$mainRoot/glew-2.2.0/include"]
+        }
+
         def execCmd = { cmd ->
             try{
                 def process = cmd instanceof List ? new ProcessBuilder(cmd).redirectErrorStream(true).start() : Runtime.getRuntime().exec(cmd)
@@ -89,17 +125,6 @@ if(project.hasProperty("jnigen")){
                 return value.substring(0, 2) + value.substring(3, 4).toUpperCase() + ":/" + value.substring(5)
             }
             return value
-        }
-
-        sharedLibName = "sdl-arc"
-        libsDir = "libs"
-
-        def sdlVersion = "2.32.8"
-        def mainRoot = "build/jnigen/sources"
-
-        all{
-            cIncludes = ["$mainRoot/glew-2.2.0/src/glew.c"]
-            headerDirs = ["$mainRoot/glew-2.2.0/include"]
         }
 
         addLinux(x64, x86){
