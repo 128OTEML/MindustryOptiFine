@@ -156,7 +156,7 @@ if(project.hasProperty("jnigen")){
             def glewPrefix = execCmd("brew --prefix glew").trim()
             cppFlags = cFlags = (cflags + " -c -Wall -O2 -arch " + arch + " -DFIXED_POINT -fmessage-length=0 -fPIC -mmacosx-version-min=10.9 -stdlib=libc++").split(" ")
             linkerFlags = ("-shared -arch " + arch + " -mmacosx-version-min=10.9 -stdlib=libc++").split(" ")
-            libraries = (libs + (glewPrefix ? " -L${glewPrefix}/lib" : "") + " -lGLEW").split(" ")
+            libraries = (libs + (glewPrefix ? " -L${glewPrefix}/lib" : "") + " -lGLEW -Wl,-framework,OpenGL").split(" ")
         }
 
         addMac(x64, ARM, addMacTargets)
