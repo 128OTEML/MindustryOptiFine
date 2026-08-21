@@ -134,33 +134,33 @@ if(project.hasProperty("jnigen")){
             linkerFlags = "-shared -m64".split(" ")
         }
 
-        addWindows(x64, x86){
-            def path = "SDL2-$sdlVersion/x86_64-w64-mingw32"
+        // Compute Windows link flags directly from the extracted SDL2 mingw layout instead of
+        // executing the fragile sdl2-config script (which fails on Linux CI runners).
+        addWindows(x64, x86){ bt ->
+            def triplet = (bt.bitness == x64) ? "x86_64-w64-mingw32" : "i686-w64-mingw32"
+            def path = "SDL2-$sdlVersion/$triplet"
             def root = "$projectDir/build/jnigen/sources"
             def sdlRoot = "$root/$path"
-            def gitSh = new File("C:/Program Files/Git/bin/sh.exe").exists() ? "C:/Program Files/Git/bin/sh.exe" :
-                    new File("C:/Program Files/Git/usr/bin/sh.exe").exists() ? "C:/Program Files/Git/usr/bin/sh.exe" : "sh"
+            def sdlLib = "${sdlRoot.replace('\\', '/')}/lib"
             headerDirs += (String[])["$mainRoot/$path/include/SDL2"]
-            cppFlags += splitArgs(execCmd([gitSh, sdlRoot.replace("\\", "/") + "/bin/sdl2-config", "--cflags"])).collect(normalizeWindowsArg)
-            cFlags = cppFlags
-            libraries = splitArgs(execCmd([gitSh, sdlRoot.replace("\\", "/") + "/bin/sdl2-config", "--static-libs"]) + " -lopengl32").collect(normalizeWindowsArg)
-            linkerFlags += (String[])["-L${sdlRoot.replace("\\", "/")}/lib"]
+            libraries = "-L${sdlLib} -Wl,-Bstatic -lSDL2 -Wl,-Bdynamic -lSDL2main -lm -ldinput -ldxguid -ldxerr8 -luser32 -lgdi32 -lwinmm -limm32 -lole32 -loleaut32 -lshell32 -lversion -luuid -ladvapi32 -lsetupapi -lopengl32".split(" ")
+            linkerFlags += (String[])["-L${sdlLib}"]
         }
 
-        if(System.getProperty("os.arch") != "aarch64"){
-            addMac(x64, ARM){
-                cppFlags = cFlags = (execCmd("sdl2-config --cflags") + " -c -Wall -O2 -arch x86_64 -DFIXED_POINT -fmessage-length=0 -fPIC -mmacosx-version-min=10.9 -stdlib=libc++").split(" ")
-                linkerFlags = "-shared -arch x86_64 -mmacosx-version-min=10.9 -stdlib=libc++".split(" ")
-                libraries = "/usr/local/lib/libSDL2.a -lm -liconv -Wl,-framework,CoreAudio -Wl,-framework,CoreHaptics -Wl,-weak_framework,GameController -Wl,-framework,OpenGL,-weak_framework,AudioToolbox -Wl,-framework,ForceFeedback -lobjc -Wl,-framework,CoreVideo -Wl,-framework,Cocoa -Wl,-framework,Carbon -Wl,-framework,IOKit -Wl,-weak_framework,QuartzCore -Wl,-weak_framework,Metal /usr/local/lib/libGLEW.a".split(" ")
-            }
-        }else{
-            //doesn't work on CI, have to use native M1
-            addMac(x64, x86){
-                cppFlags = cFlags = (execCmd("sdl2-config --cflags") + " -c -Wall -O2 -arch arm64 -DFIXED_POINT -fmessage-length=0 -fPIC -mmacosx-version-min=10.9 -stdlib=libc++").split(" ")
-                linkerFlags = "-shared -arch arm64 -mmacosx-version-min=10.9 -stdlib=libc++".split(" ")
-                libraries = "/usr/local/lib/libSDL2.a -lm -liconv -Wl,-framework,CoreAudio -Wl,-weak_framework,GameController -Wl,-framework,OpenGL,-weak_framework,AudioToolbox -Wl,-framework,ForceFeedback -lobjc -Wl,-framework,CoreVideo -Wl,-framework,Cocoa -Wl,-framework,Carbon -Wl,-framework,IOKit -Wl,-weak_framework,QuartzCore -Wl,-weak_framework,Metal /usr/local/lib/libGLEW.a".split(" ")
-            }
+        // macOS: derive arch from the build target and resolve libs via sdl2-config + brew (no
+        // hardcoded /usr/local/lib paths, which don't exist on Apple-Silicon runners).
+        def addMacTargets = { bt ->
+            def arch = (bt.architecture == ARM) ? "arm64" : "x86_64"
+            def cflags = execCmd("sdl2-config --cflags")
+            def libs = execCmd("sdl2-config --libs")
+            def glewPrefix = execCmd("brew --prefix glew").trim()
+            cppFlags = cFlags = (cflags + " -c -Wall -O2 -arch " + arch + " -DFIXED_POINT -fmessage-length=0 -fPIC -mmacosx-version-min=10.9 -stdlib=libc++").split(" ")
+            linkerFlags = ("-shared -arch " + arch + " -mmacosx-version-min=10.9 -stdlib=libc++").split(" ")
+            libraries = (libs + (glewPrefix ? " -L${glewPrefix}/lib" : "") + " -lGLEW").split(" ")
         }
+
+        addMac(x64, ARM, addMacTargets)
+        addMac(x64, x86, addMacTargets)
     }
 
     getTasksByName("jnigen", true).each{

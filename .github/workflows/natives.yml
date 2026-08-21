@@ -2,7 +2,7 @@ name: Build SDL Natives
 
 # Auto-generates the SDL JNI natives (sdl-arc*.dll/.so/.dylib) from the Java
 # sources via gdx-jnigen. No C is hand-written: `jnigen` generates the JNI
-# wrappers, `jnigenBuildAll*` compiles them, and the result lands in
+# wrappers, `jnigenBuild*` compiles them, and the result lands in
 # runtime/backend-sdl/libs/<platform>/.
 
 on:
@@ -32,10 +32,10 @@ jobs:
             g++-mingw-w64 gcc-mingw-w64 \
             libsdl2-dev libglew-dev libgl1-mesa-dev libdrm-dev libgbm-dev unzip
 
-      - name: Build Windows + Linux natives
+      - name: Build Windows + Linux natives (x86_64)
         run: |
           chmod +x ./gradlew
-          ./gradlew :runtime:backend-sdl:jnigenBuildAllWindows :runtime:backend-sdl:jnigenBuildAllLinux -Pjnigen
+          ./gradlew :runtime:backend-sdl:jnigenBuildWindows_x86_64 :runtime:backend-sdl:jnigenBuildLinux_x86_64 -Pjnigen
 
       - name: Upload natives
         uses: actions/upload-artifact@v4
@@ -43,7 +43,6 @@ jobs:
           name: SDL natives (Windows + Linux)
           path: |
             runtime/backend-sdl/libs/windows64
-            runtime/backend-sdl/libs/windows32
             runtime/backend-sdl/libs/linux64
 
   natives-mac:
@@ -60,13 +59,15 @@ jobs:
       - name: Install build dependencies
         run: |
           brew install sdl2 glew
+          # ensure sdl2-config / brew prefixes are resolvable in later steps
+          echo "$(brew --prefix)/bin" >> $GITHUB_PATH
 
-      - name: Build Mac natives
+      - name: Build Mac natives (arm64)
         env:
           MACOSX_DEPLOYMENT_TARGET: '10.9'
         run: |
           chmod +x ./gradlew
-          ./gradlew :runtime:backend-sdl:jnigenBuildAllMacOsX -Pjnigen
+          ./gradlew :runtime:backend-sdl:jnigenBuildMacOsX_Arm_64 -Pjnigen
 
       - name: Upload natives
         uses: actions/upload-artifact@v4
