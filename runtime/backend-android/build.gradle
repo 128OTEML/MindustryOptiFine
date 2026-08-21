@@ -1,0 +1,37 @@
+apply plugin: "java"
+
+version = "v159.7"
+
+sourceSets.main.java.srcDirs = ["src"]
+sourceSets.main.resources.srcDirs = ["libs"]
+
+repositories{
+    mavenCentral()
+    maven{ url = "https://raw.githubusercontent.com/Zelaux/MindustryRepo/master/repository" }
+    maven{ url = 'https://www.jitpack.io' }
+}
+
+dependencies{
+    // arc-core is provided by the game at runtime; needed to compile the backend classes.
+    implementation "com.github.Anuken.Arc:arc-core:$version"
+
+    // Android framework classes: prefer a local libs/android.jar (committed), fall back to ANDROID_HOME.
+    if(!file("libs/android.jar").exists()){
+        def sdk = System.getenv("ANDROID_HOME")
+        if(sdk != null){
+            def highest = new File(sdk, "platforms").listFiles().findAll{ it.name ==~ /android-\d+/ }.max{ it.name.find(/\d+/).toInteger() }
+            if(highest != null){
+                def sdkJar = new File(highest, "android.jar")
+                if(sdkJar.exists()) compileOnly files(sdkJar.absolutePath)
+            }
+        }
+    }else{
+        compileOnly fileTree(dir: 'libs', include: ['*.jar'])
+    }
+}
+
+jar{
+    // drop-in replacement for the game's bundled arc-android.jar
+    archiveFileName = "arc-android.jar"
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}

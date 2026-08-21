@@ -1,0 +1,39 @@
+name: Build Android Backend
+
+# Builds the Android backend (runtime/backend-android) as a drop-in arc-android.jar.
+#
+# NOTE: backend-android is a Java-only module. The actual Android native library
+# (libarc.so with the GL20/GL30 JNI) is generated from arc-core's jnigen build
+# (arc-core:jnigenBuildAllAndroid, requiring the Android NDK), NOT from this module
+# -- AndroidGL20/30 here have no `native` methods. So this workflow only produces
+# the Java backend jar; the native .so is rebuilt together with arc-core upstream.
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'runtime/backend-android/**'
+      - '.github/workflows/build-android.yml'
+
+jobs:
+  build-android-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: 17
+
+      - name: Build arc-android.jar
+        run: |
+          chmod +x ./gradlew
+          ./gradlew :runtime:backend-android:jar
+
+      - name: Upload arc-android.jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: arc-android.jar
+          path: runtime/backend-android/build/libs/arc-android.jar

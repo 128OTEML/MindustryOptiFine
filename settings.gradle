@@ -1,3 +1,4 @@
 rootProject.name = "MindustryOptiFine"
 
 include(":runtime:backend-sdl")
+include(":runtime:backend-android")
