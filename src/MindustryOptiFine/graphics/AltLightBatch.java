@@ -58,7 +58,7 @@ public class AltLightBatch extends SpriteBatch{
                 commonPool = new ForkJoinHolder();
             }catch(Throwable th){
                 Log.err(th);
-                multithreaded = false;
+                multithreaded = true;
             }
         }
     }

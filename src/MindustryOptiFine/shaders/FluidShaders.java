@@ -14,9 +14,7 @@ import mindustry.graphics.*;
 import java.lang.reflect.Field;
 
 /**
- * Port of the Factoriodustry external fluid shader replacement (scripts/shaders.js).
- *
- * Replaces the vanilla water/tar/mud/slag surface shaders with the older-style
+ * Replaces the vanilla water/tar/mud surface shaders with the older-style
  * animated ones that fake 3D reflections. The per-frame "flying object" capture
  * between {@link Layer#flyingUnitLow} and {@link Layer#flyingUnit} is provided
  * by Shadow2 (see {@link ShadowRenderer#getFlyingBuffer()}) and sampled as
@@ -29,7 +27,7 @@ import java.lang.reflect.Field;
 public class FluidShaders{
     private static boolean shadersInit;
 
-    public static Shaders.SurfaceShader water, tar, mud, slag;
+    public static Shaders.SurfaceShader water, tar, mud;
 
     /** Single entry point, call once from the mod constructor. Only registers event listeners here. */
     public static void init(){
@@ -48,19 +46,19 @@ public class FluidShaders{
             water = new WaterShader();
             tar = new TarShader();
             mud = new MudShader();
-            slag = new SlagShader();
+            //slag = new SlagShader();
 
             Shaders.water = water;
             Shaders.tar = tar;
             Shaders.mud = mud;
-            Shaders.slag = slag;
+            //Shaders.slag = slag;
 
             shadersInit = true;
 
             replaceCacheLayer("water", water);
             replaceCacheLayer("tar", tar);
             replaceCacheLayer("mud", mud);
-            replaceCacheLayer("slag", slag);
+            //replaceCacheLayer("slag", slag);
 
             Log.info("FluidShaders: replaced vanilla water/tar/mud/slag shaders with external animated variants");
         }catch(Throwable t){

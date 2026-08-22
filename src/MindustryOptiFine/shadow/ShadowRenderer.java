@@ -407,7 +407,7 @@ public class ShadowRenderer {
         // Sombras de unidades dibujadas dentro de la ventana de captura voladora de FluidShaders
         // (justo debajo de flyingUnitLow): así quedan tanto en pantalla (vía el blit del buffer)
         // como en u_flying, sin duplicarse y sin arrastrar el sombreado de edificios de los tiers.
-        Draw.draw(Layer.flyingUnitLow - 0.005f, () -> {
+        Draw.draw(Layer.block + 20f, () -> {
             if (!unitShadows.isEmpty()) {
                 for (UnitShadowData ud : unitShadows) {
                     Draw.color(0.04f, 0.03f, 0.08f, ud.alpha * alpha);
