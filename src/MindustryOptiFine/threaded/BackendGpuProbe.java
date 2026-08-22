@@ -30,6 +30,9 @@ public final class BackendGpuProbe{
     public static volatile int workerCount;
     public static volatile int gpuWorkersReady;
 
+    /** True when SDL_GL_MakeCurrent is available in native lib. */
+    public static volatile boolean makeCurrentSupported;
+
     private static boolean init(){
         if(schedulerClass != null) return true;
         try{
@@ -40,7 +43,24 @@ public final class BackendGpuProbe{
             gpuWorkersReadyM = c.getMethod("gpuWorkersReady");
             regGpu = c.getMethod("registerGpu", Prov.class, Func.class, Cons.class, int.class);
             schedulerClass = c;
+            
+            // Check if SDL_GL_MakeCurrent is supported in native library
+            makeCurrentSupported = isMakeCurrentSupported();
+            
             return true;
+        }catch(Throwable t){
+            makeCurrentSupported = false;
+            return false;
+        }
+    }
+    
+    /** Check if SDL_GL_MakeCurrent native function is available */
+    private static boolean isMakeCurrentSupported(){
+        try{
+            // Try to find the method in SDLGL class
+            Class<?> sdlGLClass = Class.forName("arc.backend.sdl.jni.SDLGL");
+            java.lang.reflect.Method makeCurrentM = sdlGLClass.getMethod("glMakeCurrent", long.class, long.class);
+            return makeCurrentM != null;
         }catch(Throwable t){
             return false;
         }
@@ -51,6 +71,7 @@ public final class BackendGpuProbe{
         gpuSupport = false;
         gpuWorkersReady = 0;
         workerCount = 0;
+        makeCurrentSupported = false;
         if(!init()) return;
         try{
             Object rs = instanceField.get(null);
@@ -64,10 +85,10 @@ public final class BackendGpuProbe{
         }
     }
 
-    /** L2 usable: patched scheduler present, natives rebuilt, user hasn't disabled it. */
+    /** L2 usable: patched scheduler present, natives rebuilt with SDL_GL_MakeCurrent, user hasn't disabled it. */
     public static boolean gpuReady(){
         refresh();
-        return available && gpuSupport && !disabled;
+        return available && gpuSupport && makeCurrentSupported && !disabled;
     }
 
     /**

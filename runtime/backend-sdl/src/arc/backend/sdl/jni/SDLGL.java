@@ -1161,5 +1161,9 @@ public class SDLGL{
         glInvalidateSubFramebuffer(target, numAttachments, (GLenum*)attachments, x, y, width, height);
     */
 
+    public static native int glMakeCurrent(long window, long context); /*
+        return SDL_GL_MakeCurrent((SDL_Window*)window, (SDL_GLContext)context);
+    */
+
     //endregion
 }

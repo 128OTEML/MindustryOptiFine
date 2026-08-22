@@ -31,6 +31,9 @@ public class SdlGraphics extends Graphics{
     int logicalWidth;
     int logicalHeight;
 
+    // === GL 上下文管理 ===
+    private long currentGLContext = 0;
+
     // === 多线程支持字段 ===
     private Thread workerThread;
     private boolean workerRunning = false;
@@ -66,6 +69,12 @@ public class SdlGraphics extends Graphics{
 
         clear(app.config.initialBackgroundColor);
         SDL_GL_SwapWindow(app.window);
+        
+        // Initialize default GL context on main thread
+        currentGLContext = SDLGL.glMakeCurrent((long)app.window, 0);
+        if(currentGLContext != 0){
+            Log.info("GL context initialized on main thread");
+        }
     }
 
     boolean supportsFBO(){
@@ -97,6 +106,32 @@ public class SdlGraphics extends Graphics{
         backBufferHeight = wh[1];
 
         gl20.glViewport(0, 0, backBufferWidth, backBufferHeight);
+    }
+
+    /**
+     * Set the current OpenGL context for the window.
+     * This allows other threads (e.g., worker thread) to make GL calls.
+     * @param context the GL context handle (0 to detach from GL)
+     * @return true if the context was set successfully
+     */
+    public boolean setCurrentContext(long context){
+        this.currentGLContext = context;
+        int result = SDLGL.glMakeCurrent((long)app.window, currentGLContext);
+        if(result == 0){
+            Log.info("GL context switched successfully");
+            return true;
+        }else{
+            Log.err("Failed to switch GL context");
+            return false;
+        }
+    }
+    
+    /**
+     * Get the current GL context handle.
+     * @return the GL context handle, or 0 if not set
+     */
+    public long getCurrentContext(){
+        return currentGLContext;
     }
 
     @Override
@@ -314,12 +349,15 @@ public class SdlGraphics extends Graphics{
     public void startWorkerThread(){
         if(workerThread != null && workerThread.isAlive()) return;
         workerRunning = true;
+        // Switch GL context to worker thread so it can make GL calls
+        setCurrentContext(currentGLContext);
         workerThread = Threads.daemon("sdl-worker", () -> workerLoop());
     }
 
     /**
      * 工作线程主循环
-     * 仅处理纯计算任务，绝不包含 OpenGL 调用
+     * 可以处理需要 OpenGL 上下文的任务（通过 setCurrentContext 切换）
+     * 注意：GL 调用必须在上下文活动时进行
      */
     private void workerLoop(){
         while(workerRunning){
@@ -339,8 +377,13 @@ public class SdlGraphics extends Graphics{
                 }
             }
             if(task != null){
+                // Switch GL context before running the task (if needed)
+                // The context was already set in startWorkerThread, but ensure it's current
+                if(currentGLContext != 0){
+                    SDLGL.glMakeCurrent((long)app.window, currentGLContext);
+                }
                 try{
-                    task.run(); // 在此处执行纯计算任务
+                    task.run(); // 在此处执行任务（可包含受限的 GL 调用）
                 }catch(Throwable e){
                     Log.err("Worker task failed: @", e);
                 }
