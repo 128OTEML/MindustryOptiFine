@@ -11,6 +11,7 @@ public class SDLGL{
 
     #define GLEW_STATIC
 
+    #include "SDL.h"
     #include "GL/glew.h"
 
     //copied from ios openGL source, I have no idea what I'm doing
