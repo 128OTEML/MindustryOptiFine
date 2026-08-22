@@ -31,6 +31,12 @@ public class SdlGraphics extends Graphics{
     int logicalWidth;
     int logicalHeight;
 
+    // === 多线程支持字段 ===
+    private Thread workerThread;
+    private boolean workerRunning = false;
+    private final Object taskLock = new Object();
+    private Runnable pendingTask = null;
+
     SdlGraphics(SdlApplication app){
         this.app = app;
 
@@ -272,8 +278,74 @@ public class SdlGraphics extends Graphics{
     @Override
     public void dispose(){
         super.dispose();
-
         cursors.each((ignored, value) -> value.dispose());
+
+        // 停止工作线程
+        workerRunning = false;
+        synchronized(taskLock){
+            taskLock.notifyAll();
+        }
+        if(workerThread != null){
+            try{
+                workerThread.join(2000);
+            }catch(InterruptedException e){
+                Log.err(e);
+            }
+        }
+    }
+
+    // === 多线程任务提交 ===
+
+    /**
+     * 将任务提交到工作线程执行
+     * 注意：任务中不得包含 OpenGL 调用，仅限纯计算
+     * @param task 要执行的任务
+     */
+    public void submitTask(Runnable task){
+        synchronized(taskLock){
+            pendingTask = task;
+            taskLock.notifyAll();
+        }
+    }
+
+    /**
+     * 启动工作线程（由应用在 init() 或类似时机调用）
+     */
+    public void startWorkerThread(){
+        if(workerThread != null && workerThread.isAlive()) return;
+        workerRunning = true;
+        workerThread = Threads.daemon("sdl-worker", () -> workerLoop());
+    }
+
+    /**
+     * 工作线程主循环
+     * 仅处理纯计算任务，绝不包含 OpenGL 调用
+     */
+    private void workerLoop(){
+        while(workerRunning){
+            Runnable task;
+            synchronized(taskLock){
+                if(pendingTask != null){
+                    task = pendingTask;
+                    pendingTask = null;
+                }else{
+                    try{
+                        taskLock.wait();
+                    }catch(InterruptedException e){
+                        continue;
+                    }
+                    if(!workerRunning) break;
+                    continue;
+                }
+            }
+            if(task != null){
+                try{
+                    task.run(); // 在此处执行纯计算任务
+                }catch(Throwable e){
+                    Log.err("Worker task failed: @", e);
+                }
+            }
+        }
     }
 
     private int mapCursor(SystemCursor cursor){
